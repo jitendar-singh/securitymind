@@ -20,7 +20,7 @@ class Review(BaseModel):
 
 def review_code(code_snippet: str) -> dict:
     """
-    Performs a code review on the provided code snippets using Gemini AI model.
+    Performs a code review on the provided code snippet using Gemini AI model.
     Auto-detects the programming language.
     Focuses on code smells, readability, efficiency, security, and provides developer-like feedback.
     Supports multiple programming languages.
