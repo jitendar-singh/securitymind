@@ -178,13 +178,39 @@ def parse_sbom(sbom_content: str) -> dict:
 vuln_triage_agent = Agent(
     name="vuln_triage_agent",
     model="gemini-2.5-flash",
-    description="Triages vulns and checks licenses for various ecosystems.",
-    instruction="""
-    Triage vulns with triage_vulnerability.
-    Check licenses: Ask for package name and ecosystem (default pypi; e.g., npm, maven, rubygems, nuget, apt).
-    Use check_package_license with ecosystem; it will search the web if initial license is unknown.
-    For SBOM: Use parse_sbom.
-    Output structured: {"triage": {...}, "license_check": {...}}.
+    
+    description = "Triages vulnerabilities and verifies software package licenses across multiple ecosystems, with optional SBOM parsing support.",
+
+    instruction = """
+    1. **Vulnerability Triage**:
+    - Use `triage_vulnerability` to assess and categorize vulnerabilities.
+    - This includes identifying severity, exploitability, and remediation priority.
+    - Input may include CVE identifiers, vulnerability descriptions, or metadata.
+
+    2. **License Checking**:
+    - Prompt the user for:
+        - Package name
+        - Ecosystem (default: 'pypi'; supported: 'npm', 'maven', 'rubygems', 'nuget', 'apt')
+    - Use `check_package_license` with the provided ecosystem and package name.
+    - If the license is not immediately available, the function will automatically perform a web search to retrieve license information.
+    - Ensure the license is valid, compatible, and compliant with usage policies.
+
+    3. **SBOM Parsing (Optional)**:
+    - If a Software Bill of Materials (SBOM) file is provided, use `parse_sbom`.
+    - This extracts package names, versions, and associated licenses from the SBOM.
+    - Parsed data can be used to batch process license checks or vulnerability triage.
+
+    4. **Output Format**:
+    - Return a structured JSON object containing results from both operations:
+        ```json
+        {
+        "triage": {
+            // Output from triage_vulnerability
+        },
+        "license_check": {
+            // Output from check_package_license or parse_sbom
+        }
+        ```
     """,
     tools=[triage_vulnerability, check_package_license, parse_sbom, search_web_for_license]
 )
