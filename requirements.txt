@@ -1,0 +1,10 @@
+google-adk
+psutil
+google-generativeai
+python-dotenv
+PyPDF2
+Pillow
+python-dateutil
+lxml
+python-docx
+atlassian-python-api
