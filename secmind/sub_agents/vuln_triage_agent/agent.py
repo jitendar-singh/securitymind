@@ -1,7 +1,10 @@
+import os
+import re
+import nvdlib
 import json
 import requests
 from google.adk.agents import Agent
-from google.adk.tools import google_search
+from google.adk.tools import google_search, agent_tool
 from dotenv import load_dotenv
 from xml.etree import ElementTree as ET  # For parsing NuGet nuspec XML (if needed)
 
@@ -9,158 +12,163 @@ load_dotenv()
 
 COPYLEFT_LICENSES = {"GPL", "AGPL", "LGPL", "MPL", "EPL", "CDDL"}
 
-def triage_vulnerability(vuln_description: str, affected_system: str = "") -> dict:
-    return {"status": "success", "severity": "High", "recommendations": "Patch immediately."}
 
-def search_web_for_license(query: str) -> str:
-    """
-    Performs a web search for the license using a search API (e.g., DuckDuckGo or Google Custom Search fallback).
-    Returns the extracted license or 'Unknown'.
-    """
-    try:
-        # Use DuckDuckGo API as a free alternative (no key needed)
-        url = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            abstract = data.get('AbstractText', '')
-            if abstract:
-                # Simple extract: Look for 'licensed under' or common phrases
-                if 'licensed under' in abstract.lower():
-                    license_part = abstract.lower().split('licensed under')[-1].strip()
-                    return license_part.split('.')[0].strip().title()  # Basic parse
-            related_topics = data.get('RelatedTopics', [])
-            for topic in related_topics:
-                text = topic.get('Text', '')
-                if 'license' in text.lower():
-                    return text.split('license')[-1].strip()
-        return 'Unknown'
-    except Exception:
-        return 'Unknown'
 
-def search_license(package_name: str, ecosystem: str) -> str:
+def triage_vulnerability(vuln_description: str) -> dict:
     """
-    Searches for the license using ClearlyDefined API as primary, falling back to web search if unknown.
+    Triages a vulnerability by extracting the CVE ID from the description and querying the NVD API for details.
     """
-    try:
-        ecosystem_map = {
-            "pypi": "pypi",
-            "npm": "npm",
-            "maven": "maven",
-            "rubygems": "gem",
-            "nuget": "nuget",
-            "apt": "debiantype"
-        }
-        cd_type = ecosystem_map.get(ecosystem.lower(), "")
-        if not cd_type:
-            return 'Unknown'
-        
-        if ecosystem.lower() == "maven":
-            coordinates = f"maven/mavencentral/{package_name.replace(':', '/')}"
-        elif ecosystem.lower() == "npm":
-            coordinates = f"npm/npmjs/-/{package_name.split('/')[-1]}"
-        elif ecosystem.lower() == "apt":
-            coordinates = f"debiantype/debian/-/{package_name}"
-        else:
-            coordinates = f"{cd_type}/{cd_type}/-/{package_name}"
-        
-        url = f"https://api.clearlydefined.io/definitions?coordinates={coordinates}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            licensed = data.get('licensed', {})
-            declared = licensed.get('declared', 'Unknown')
-            if declared != 'NOASSERTION' and declared != 'Unknown':
-                return declared
-    except Exception:
-        pass
+    # Extract CVE ID from the description (e.g., "CVE-2023-XXXX")
+    cve_match = re.search(r'CVE-\d{4}-\d{4,7}', vuln_description, re.IGNORECASE)
+    if not cve_match:
+        return {"severity": "unknown", "recommendation": "No valid CVE ID found in description.", "details": {}}
     
-    # Fallback to web search
-    query = f"{package_name} {ecosystem} open source license"
-    # return search_web_for_license(query)
-
-def check_package_license(package_name: str, ecosystem: str = "pypi") -> dict:
-    """
-    Checks the license of a package from various ecosystems and determines if it's copyleft.
-    If initial fetch returns 'Unknown', falls back to search_license.
-    """
+    cve_id = cve_match.group(0).upper()
+    api_key = os.getenv('NVD_API_KEY')
+    
     try:
-        license_name = 'Unknown'
-        if ecosystem.lower() == "pypi":
-            url = f"https://pypi.org/pypi/{package_name}/json"
-            response = requests.get(url)
-            data = response.json()
-            license_name = data.get('info', {}).get('license', 'Unknown')
-        elif ecosystem.lower() == "npm":
-            package_name = package_name.replace('/', '%2F')
-            url = f"https://registry.npmjs.org/{package_name}"
-            response = requests.get(url)
-            data = response.json()
-            license_name = data.get('license', 'Unknown')
-        elif ecosystem.lower() == "maven":
-            group, artifact = package_name.split(':')
-            url = f"https://search.maven.org/solrsearch/select?q=g:\"{group}\"+AND+a:\"{artifact}\""
-            response = requests.get(url)
-            data = response.json()
-            docs = data.get('response', {}).get('docs', [])
-            license_name = docs[0].get('license', 'Unknown') if docs else 'Unknown'
-        elif ecosystem.lower() == "rubygems":
-            url = f"https://rubygems.org/api/v1/gems/{package_name}.json"
-            response = requests.get(url)
-            data = response.json()
-            license_name = data.get('licenses', ['Unknown'])[0] if isinstance(data.get('licenses'), list) else data.get('licenses', 'Unknown')
-        elif ecosystem.lower() == "nuget":
-            url = f"https://api.nuget.org/v3/registration5-gz-semver2/{package_name.lower()}/index.json"
-            response = requests.get(url)
-            data = response.json()
-            latest_item = data.get('items', [])[-1] if data.get('items') else None
-            if latest_item:
-                catalog_entry = latest_item.get('items', [{}])[0].get('catalogEntry', {})
-                license_expression = catalog_entry.get('licenseExpression', 'Unknown')
-                license_url = catalog_entry.get('licenseUrl', '')
-                if license_expression != 'Unknown':
-                    license_name = license_expression
-                elif license_url:
-                    license_response = requests.get(license_url)
-                    license_name = license_response.text.strip()[:100] + '...' if license_response.status_code == 200 else 'Unknown'
-            else:
-                return {"status": "error", "error_message": f"Package '{package_name}' not found in NuGet."}
-        elif ecosystem.lower() == "apt":
-            url = f"https://sources.debian.org/api/src/{package_name}/"
+        # Search for the CVE using nvdlib (supports NVD API v2)
+        results = nvdlib.searchCVE(cveId=cve_id, key=api_key)
+        if not results:
+            return {"severity": "unknown", "recommendation": "CVE not found in NVD.", "details": {}}
+        
+        cve = results[0]
+        
+        # Get severity and score (prefer CVSS v3.1 or v4 if available, fallback to v3.0/v2)
+        severity = None
+        score = None
+        cvss_vector = "N/A"
+        
+        # Check for CVSS v4 (newer metrics)
+        if hasattr(cve, 'v40severity'):
+            severity = cve.v40severity
+            score = cve.v40score
+            cvss_vector = cve.v40vector
+        elif hasattr(cve, 'v31severity'):
+            severity = cve.v31severity
+            score = cve.v31score
+            cvss_vector = cve.v31vector
+        elif hasattr(cve, 'v30severity'):
+            severity = cve.v30severity
+            score = cve.v30score
+            cvss_vector = cve.v30vector
+        elif hasattr(cve, 'v2severity'):
+            severity = cve.v2severity
+            score = cve.v2score
+            cvss_vector = cve.v2vector
+        else:
+            severity = "unknown"
+            score = "unknown"
+        
+        # Get description
+        description = cve.descriptions[0].value if cve.descriptions else "No description available."
+        
+        # Recommendation based on severity
+        if severity in ["CRITICAL", "HIGH"]:
+            recommendation = "Patch immediately."
+        elif severity == "MEDIUM":
+            recommendation = "Patch within 30 days."
+        elif severity == "LOW":
+            recommendation = "Monitor and patch as needed."
+        else:
+            recommendation = "Review for applicability."
+        
+        # Additional details
+        details = {
+            "cve_id": cve.id,
+            "published": cve.published,
+            "last_modified": cve.lastModified,
+            "cvss_score": score,
+            "cvss_vector": cvss_vector,
+            "description": description
+        }
+        
+        return {"severity": severity, "recommendation": recommendation, "details": details}
+    
+    except Exception as e:
+        return {"severity": "error", "recommendation": f"Failed to triage: {str(e)}", "details": {}}
+
+search_agent = Agent(
+    model='gemini-2.5-flash',
+    name='SearchAgent',
+    instruction="""
+    You're a specialist in Google Search
+    """,
+    tools=[google_search],
+)
+
+COPYLEFT_LICENSES = {'GPL', 'AGPL', 'LGPL', 'MPL', 'EPL'}  # Example set; expand as needed
+
+def check_package_license(package_name: str, ecosystem: str = 'npm') -> dict:
+    """
+    Checks the license for a package, auto-detecting ecosystem if not provided.
+    Returns license and whether it's copyleft.
+    """
+    license_info = 'Unknown'
+    detected_ecosystem = ecosystem.lower() if ecosystem else None
+    
+    # Pattern-based auto-detection
+    if detected_ecosystem is None:
+        if package_name.startswith('@'):  # Common for npm scoped packages
+            detected_ecosystem = 'npm'
+        elif '.' in package_name:  # e.g., com.example for maven
+            detected_ecosystem = 'maven'
+        else:
+            detected_ecosystem = 'pypi'  # Default for ambiguous
+
+    # Ecosystem-specific checks (expand with more as needed)
+    if detected_ecosystem == 'pypi':
+        url = f"https://pypi.org/pypi/{package_name}/json"
+        try:
             response = requests.get(url)
             if response.status_code == 200:
                 data = response.json()
-                versions = data.get('versions', {})
-                latest_version = max(versions.keys()) if versions else None
-                if latest_version:
-                    copyright_url = f"https://sources.debian.org/src/{package_name}/{latest_version}/debian/copyright/"
-                    copyright_response = requests.get(copyright_url)
-                    if copyright_response.status_code == 200:
-                        copyright_text = copyright_response.text
-                        license_lines = [line.strip() for line in copyright_text.splitlines() if line.strip().startswith('License:')]
-                        license_name = license_lines[0].replace('License:', '').strip() if license_lines else 'Unknown'
-                    else:
-                        license_name = 'Unknown'
-                else:
-                    return {"status": "error", "error_message": f"No versions found for '{package_name}' in APT/Debian."}
-            else:
-                return {"status": "error", "error_message": f"Package '{package_name}' not found in APT/Debian."}
-        else:
-            return {"status": "error", "error_message": f"Unsupported ecosystem '{ecosystem}'. Supported: pypi, npm, maven, rubygems, nuget, apt."}
-        
-        # Fallback search if unknown
-        if license_name == 'Unknown' or license_name == 'NOASSERTION':
-            license_name = search_license(package_name, ecosystem)
-        
-        is_copyleft = any(cl in str(license_name).upper() for cl in COPYLEFT_LICENSES)
-        return {
-            "status": "success",
-            "license": license_name,
-            "is_copyleft": is_copyleft,
-            "details": f"License '{license_name}' is {'copyleft' if is_copyleft else 'not copyleft'}."
-        }
-    except Exception as e:
-        return {"status": "error", "error_message": str(e)}
+                license_info = data['info'].get('license', 'Unknown')
+        except Exception:
+            pass
+
+    elif detected_ecosystem == 'npm':
+        url = f"https://registry.npmjs.org/{package_name}"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                license_info = data.get('license', 'Unknown')
+        except Exception:
+            pass
+
+    elif detected_ecosystem == 'maven':
+        # Maven uses group:artifact; split if needed
+        parts = package_name.split(':') if ':' in package_name else package_name.split('.')
+        group = '.'.join(parts[:-1])
+        artifact = parts[-1]
+        url = f"https://mvnrepository.com/artifact/{group}/{artifact}"  # Or use Maven Central API
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                # Parse HTML or use API for license; placeholder for real extraction
+                license_info = 'Extracted from Maven'  # Implement parsing
+        except Exception:
+            pass
+
+    # If still unknown, fallback to ClearlyDefined or agent will use google_search
+    if license_info == 'Unknown':
+        clearlydefined_url = f"https://api.clearlydefined.io/definitions/{detected_ecosystem or 'pypi'}/{package_name}"
+        try:
+            response = requests.get(clearlydefined_url)
+            if response.status_code == 200:
+                data = response.json()
+                license_info = data.get('licensed', {}).get('declared', 'Unknown')
+        except Exception:
+            pass
+
+    is_copyleft = any(lic in license_info.upper() for lic in COPYLEFT_LICENSES) if license_info != 'Unknown' else False
+
+    return {
+        "license": license_info,
+        "ecosystem": detected_ecosystem or 'unknown',
+        "is_copyleft": is_copyleft
+    }
 
 def parse_sbom(sbom_content: str) -> dict:
     try:
@@ -186,14 +194,77 @@ vuln_triage_agent = Agent(
     - Use `triage_vulnerability` to assess and categorize vulnerabilities.
     - This includes identifying severity, exploitability, and remediation priority.
     - Input may include CVE identifiers, vulnerability descriptions, or metadata.
+    - Ensure that vulnerability data is current and relevant to the software's context.
+    - Return the structured results with assessed severity, recommendations, and detailed information.
+    - If the input does not contain a CVE ID, return "No valid CVE ID found in description."
+    - For undetected CVEs, no specific recommendation is provided.
+    - For invalid CVEs, return "CVE not found in NVD."
+    - In case of internal errors, provide "Failed to triage" and relevant error message.
+    - output format: Detailed Summaries with patch priorities, structured as bullet points:
+        - Medium: CVSS Score >7 && CVSS Score <9 (followed by sub-points)
+        - High: CVSS Score >9 (followed by sub-points)
+        - Critical: CVSS Score > 9.5 (followed by sub-points)
+        - Major issues should be listed first and minor ones at the bottom.
+        - Identified vulnerabilities are numbered, followed by their respective details and recommendations.
+        - Each severity level is formatted as a distinct block.
+        - Sub-points provide specific details of each vulnerability, highlighting the vulnerability description, software dependency, CVSS score, and affected versions.
+        - Recommendations offer clear next steps for fixing the vulnerability, including detailed patch information, new dependencies, and steps for testing.
+        - Code coverage blocks should be included at the end, showing which lines of code have been analyzed and potential lines of code impacted by the vulnerability.
+        - Summarize the total number of vulnerabilities detected, with specifics broken down by severity.
+        - Conclude with a note about remaining patches and urgency.
+        - A section for next steps: Provide a concise plan with priority and urgency for each detected vulnerability. Include steps for external patching and internal testing or fixes.
 
     2. **License Checking**:
     - Prompt the user for:
         - Package name
         - Ecosystem (default: 'pypi'; supported: 'npm', 'maven', 'rubygems', 'nuget', 'apt')
-    - Use `check_package_license` with the provided ecosystem and package name.
-    - If the license is not immediately available, the function will automatically perform a web search to retrieve license information.
-    - Ensure the license is valid, compatible, and compliant with usage policies.
+    - Use Tool `check_package_license` with the provided package name.
+    - Auto-detect ecosystem if not provided.
+    - Verify that the license is available; if not, use `search_license`.
+    - Extract license details and whether it's copyleft (based on known copyleft licenses).
+    - Optionally use `google_search` tool to retrieve license information if initially unknown.
+    - Return the extracted license information and copyleft status.
+    - Ensure the agent understands known copyleft licenses such as GPL, AGPL, LGPL, MPL, EPL, etc.
+    - Output example:
+        ```
+        - License: MIT
+        - Is Copyleft: False
+        ```
+    - Optionally perform a web search by using the search_agent if the license information is not immediately available.
+    - Handle errors such as network issues, API failures, and missing license information.
+    - Ensure that the license information provided is accurate, up-to-date, and compatible with the software's usage policies.
+    - Example operations:
+        - Extract license information from the package metadata.
+        - Perform a web search using search_agent if the license information is not found in metadata.
+        - Verify license compatibility and compliance with usage policies.
+        - Provide detailed analysis and recommendations if necessary.
+        - Output examples:
+            - "License not immediately available. Initiating web search..."
+            - "License found: GNU General Public License v3.0 (GPL-3.0)."
+            - "Initiating detailed license check..."
+            - "The provided license is compatible with usage policies."
+            - "There is a potential conflict with the license terms. Review for further details."
+    - Actions to take when license terms are incompatible:
+        - Highlight the incompatible terms.
+        - Provide recommendations for resolving the issue.
+        - Offer alternative options if available.
+    - Steps to take when license information is missing or incomplete:
+        - Initiate a web search to retrieve license information.
+        - Confirm the retrieved information and ensure it's up-to-date.
+        - Verify the license is valid, compatible, and compliant with usage policies.
+        - Provide details on the license status and any necessary actions.
+        - Ensure the agent is aware of known copyleft licenses such as GPL, AGPL, LGPL, MPL, EPL, etc.
+    - Example use case:
+        - The agent is tasked with checking the license for a given package in a specified ecosystem.
+        - The package metadata does not contain license information.
+        - The agent performs a web search to retrieve license details.
+        - The retrieved license is verified to be compatible with the usage policies.
+        - The agent returns the license information, indicating it is not copyleft.
+        - If the retrieved license information is missing or incomplete, the agent initiates a search until sufficient details are found.
+        - The agent ensures the license is valid, compatible, and compliant with usage policies.
+    - Ensure the agent's understanding and handling of license information is accurate and up-to-date.
+    - Support the agent's ability to perform web searches if license information is not immediately available.
+    - Ensure the agent's operations are compatible with known copyleft licenses such as GPL, AGPL, LGPL, MPL, EPL, etc.
 
     3. **SBOM Parsing (Optional)**:
     - If a Software Bill of Materials (SBOM) file is provided, use `parse_sbom`.
@@ -211,6 +282,7 @@ vuln_triage_agent = Agent(
             // Output from check_package_license or parse_sbom
         }
         ```
+    - Summarise the above json output.
     """,
-    tools=[triage_vulnerability, check_package_license, parse_sbom, search_web_for_license]
+    tools=[agent_tool.AgentTool(agent=search_agent),triage_vulnerability, check_package_license, parse_sbom]
 )

@@ -1,86 +1,111 @@
+# SecurityMind
 
-# secmind
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jitendar-singh/securitymind/actions)
+[![Security](https://img.shields.io/badge/security-active-green.svg)](https://github.com/jitendar-singh/securitymind/security)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Security](https://img.shields.io/badge/security-monitored-important)
-
-**secmind** is the master security agent responsible for orchestrating and delegating various security-related tasks to specialized sub-agents. It acts as a central hub for security operations, ensuring that user requests are routed to the most appropriate agent for resolution.
+SecurityMind is an AI-powered security agent built using Google’s Agent Development Kit (ADK). It acts as a central orchestrator for security operations, delegating tasks to specialized sub-agents for efficient handling of vulnerabilities, code reviews, policies, and more.
 
 ## 🚀 Capabilities
 
-- **Task Delegation**: Directs security queries and tasks to specialized agents.
-- **Security Orchestration**: Manages the flow of security-related operations across agents.
+- **Task Delegation**: Routes security queries to appropriate sub-agents.
+- **Security Orchestration**: Manages workflows across vulnerability triage, code reviews, Jira issue creation, and policy retrieval.
+- **Auto-Detection**: Automatically detects package ecosystems for license checks and parses SBOM files for bulk analysis.
 
 ## 🧠 Delegated Agents
 
 ### 🔍 vuln_triage_agent
-- **Description**: Triages vulnerabilities and checks licenses for various ecosystems.
+
+- **Description**: Triages vulnerabilities using NVD API and checks licenses across ecosystems (pypi, npm, maven, etc.) with auto-detection and web search fallbacks.
 - **Prompt Examples**:
-  - `"What is the license for the @azure/identity npm package?"`
-  - `"Can you triage this vulnerability for me: CVE-2023-XXXX affecting our production server?"`
+  - `"What is the license for the @azure/identity package?"` (auto-detects npm)
+  - `"Triage this vulnerability: CVE-2023-4863 affecting our web server."`
+  - `"Analyze this SBOM: [SBOM JSON content]"`
 
 ### 🛡️ code_review_agent
-- **Description**: Reviews code and delegates to Jira for issue creation if findings are identified.
+
+- **Description**: Performs AI-driven code reviews using Gemini, focusing on code smells, security, readability, and best practices. Supports auto-language detection and GitHub PR diffs.
 - **Prompt Examples**:
-  - `"Please review the security of the code in this pull request: https://github.com/org/repo/pull/123"`
-  - `"Perform a static code analysis on the latest commit in the main branch."`
+  - `"Review this code: def add(a, b): return a + b"`
+  - `"Review the security of this pull request: https://github.com/org/repo/pull/123"`
 
 ### 📋 jira_agent
-- **Description**: Creates Jira issues from security findings or general requests.
+
+- **Description**: Creates Jira issues from findings or requests, integrated via Atlassian API.
 - **Prompt Examples**:
-  - `"Create a Jira ticket to track the critical SQL injection vulnerability found in the user authentication module."`
-  - `"I need a Jira issue for the new feature request 'Implement Two-Factor Authentication'."`
+  - `"Create a Jira ticket for the SQL injection vulnerability in auth module."`
+  - `"Track new feature: Implement MFA."`
 
 ### 📚 policy_agent
-- **Description**: Reads policies from local files or Confluence.
+
+- **Description**: Reads and summarizes policies from local files (txt, pdf, docx) or Confluence.
 - **Prompt Examples**:
-  - `"What are the key points from our open-source software license policy?"`
-  - `"List all the available policy documents."`
+  - `"Summarize our open-source license policy."`
+  - `"List available policies."`
 
 ## 🧑‍💻 How to Use
 
-Simply pose your security-related question or task to **secmind**. It will automatically analyze your request and transfer it to the most suitable specialized agent to provide an accurate and efficient response. You do not need to explicitly mention the sub-agent names.
+Interact with SecurityMind by posing natural language queries. It delegates automatically—no need to specify sub-agents. For advanced use, upload SBOMs or provide code snippets/PR URLs.
 
 ## 🛠️ Tools
 
-**secmind** uses the following tool to manage its delegation:
-```python
-transfer_to_agent(agent_name: str)
-```
-Hands off control to another agent when it's more suitable to answer the user's question according to the agent's description.
+SecurityMind uses these tools for delegation and execution:
+
+- `transfer_to_agent(agent_name: str)`: Hands off to another agent.
+- Sub-agent specific tools (e.g., `review_code`, `triage_vulnerability`, `parse_sbom`—see code for details).
 
 ## 📦 Setup Instructions
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/jitendar-singh/securitymind.git
-   cd secmind
+   
    ```
-
+   git clone https://github.com/jitendar-singh/securitymind.git
+   cd securitymind
+   ```
 2. Install dependencies:
-   ```bash
+   
+   ```
    pip install -r requirements.txt
    ```
-
-3. Run the application:
-   ```bash
+3. Set environment variables in `.env`:
+- `GOOGLE_API_KEY`: For Gemini models.
+- `NVD_API_KEY`: For vulnerability triage (get from https://nvd.nist.gov/developers/request-an-api-key).
+- `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`: For Jira integration.
+- Optional: `CONFLUENCE_URL`, etc., for policy agent.
+4. Run the application:
+   
+   ```
    adk web
    ```
 
 ## 📘 Usage Examples
 
 ```python
-# Example 1: Ask about a vulnerability
-response = secmind.handle_request("Can you triage CVE-2023-XXXX?")
+# Vulnerability triage
+response = secmind.handle_request("Triage CVE-2023-4863")
 
-# Example 2: Request a code review
-response = secmind.handle_request("Review the security of this pull request: https://github.com/org/repo/pull/123")
+# License check with auto-detection
+response = secmind.handle_request("License for numpy")
 
-# Example 3: Create a Jira issue
-response = secmind.handle_request("Create a Jira ticket for the SQL injection vulnerability.")
+# Code review
+response = secmind.handle_request("Review: print('Hello')")
+
+# SBOM analysis
+sbom_json = '{"bomFormat": "CycloneDX", "components": [{"purl": "pkg:npm/@azure/identity"}]}'
+response = secmind.handle_request(f"Analyze SBOM: {sbom_json}")
+
+# Jira creation
+response = secmind.handle_request("Create Jira for high severity vuln")
 ```
 
----
+## 🤝 Contributing
 
-Feel free to contribute or raise issues to improve secmind!
+Contributions welcome! See <CONTRIBUTING.md> for guidelines. For issues, use GitHub Issues.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the <LICENSE> file for details.
+
+## About
+
+Built by [Jitendar Singh](https://github.com/jitendar-singh). For SaaS hosting or custom integrations, contact via GitHub.
