@@ -1,6 +1,8 @@
 google-adk
 psutil
 google-generativeai
+google-cloud-asset
+google-cloud-securitycenter
 python-dotenv
 PyPDF2
 Pillow
