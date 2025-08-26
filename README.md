@@ -43,6 +43,21 @@ SecurityMind is an AI-powered security agent built using Google’s Agent Develo
   - `"Summarize our open-source license policy."`
   - `"List available policies."`
 
+### ☁️ cloud_compliance_agent
+
+- **Description**: Inventories GCP resources and assesses security posture using Cloud Asset Inventory and Security Command Center APIs. Supports overall posture summaries with findings by severity.
+- **Prompt Examples**:
+  - `"Check resources in project my-project-id"`
+  - `"Assess security posture for project my-project-id"`
+  - `"Check overall security posture of GCP project my-project-id"`
+
+### 🔒 app_sec_review_agent
+
+- **Description**: Conducts threat modeling for applications, gathering details on framework, networking, deployment, and cloud env, then generates a sectioned report with recommendations using STRIDE model.
+- **Prompt Examples**:
+  - `"Perform threat modeling for my web app using Django on AWS."`
+  - `"App sec review: Framework - React/Node, Deployment - GCP Kubernetes."`
+
 ## 🧑‍💻 How to Use
 
 Interact with SecurityMind by posing natural language queries. It delegates automatically—no need to specify sub-agents. For advanced use, upload SBOMs or provide code snippets/PR URLs.
@@ -72,6 +87,8 @@ SecurityMind uses these tools for delegation and execution:
 - `NVD_API_KEY`: For vulnerability triage (get from https://nvd.nist.gov/developers/request-an-api-key).
 - `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`: For Jira integration.
 - Optional: `CONFLUENCE_URL`, etc., for policy agent.
+- `GOOGLE_APPLICATION_CREDENTIALS`: Path to GCP service account key for cloud compliance.
+- `GOOGLE_CLOUD_PROJECT`: Default GCP project ID.
 4. Run the application:
    
    ```
@@ -96,15 +113,21 @@ response = secmind.handle_request(f"Analyze SBOM: {sbom_json}")
 
 # Jira creation
 response = secmind.handle_request("Create Jira for high severity vuln")
+
+# Cloud compliance
+response = secmind.handle_request("Check overall security posture for projects/my-project-id")
+
+# App sec review
+response = secmind.handle_request("App sec review: Framework - .NET, Deployment - GCP")
 ```
 
 ## 🤝 Contributing
 
-Contributions welcome! See <CONTRIBUTING.md> for guidelines. For issues, use GitHub Issues.
+Contributions welcome! See [CONTRIBUTING.md](https://github.com/jitendar-singh/securitymind/blob/main/CONTRIBUTING.md) for guidelines. For issues, use GitHub Issues.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the <LICENSE> file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/jitendar-singh/securitymind/blob/main/LICENSE) file for details.
 
 ## About
 
