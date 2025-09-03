@@ -13,10 +13,10 @@ load_dotenv()
 COPYLEFT_LICENSES = {"GPL", "AGPL", "LGPL", "MPL", "EPL", "CDDL"}
 
 
-
-def triage_vulnerability(vuln_description: str) -> dict:
+def triage_vulnerability(vuln_description: str, affected_system: str = "") -> dict:
     """
     Triages a vulnerability by extracting the CVE ID from the description and querying the NVD API for details.
+    Falls back to cve.org API if NVD is unavailable.
     """
     # Extract CVE ID from the description (e.g., "CVE-2023-XXXX")
     cve_match = re.search(r'CVE-\d{4}-\d{4,7}', vuln_description, re.IGNORECASE)
@@ -27,7 +27,7 @@ def triage_vulnerability(vuln_description: str) -> dict:
     api_key = os.getenv('NVD_API_KEY')
     
     try:
-        # Search for the CVE using nvdlib (supports NVD API v2)
+        # Try NVD first
         results = nvdlib.searchCVE(cveId=cve_id, key=api_key)
         if not results:
             return {"severity": "unknown", "recommendation": "CVE not found in NVD.", "details": {}}
@@ -80,13 +80,76 @@ def triage_vulnerability(vuln_description: str) -> dict:
             "last_modified": cve.lastModified,
             "cvss_score": score,
             "cvss_vector": cvss_vector,
-            "description": description
+            "description": description,
+            "affected_system": affected_system
         }
         
         return {"severity": severity, "recommendation": recommendation, "details": details}
     
     except Exception as e:
-        return {"severity": "error", "recommendation": f"Failed to triage: {str(e)}", "details": {}}
+        # Fallback to cve.org API
+        try:
+            cve_url = f"https://cveawg.mitre.org/api/cve/{cve_id}"
+            response = requests.get(cve_url)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Extract from cve.org format
+            if 'containers' not in data or 'cna' not in data['containers']:
+                return {"severity": "unknown", "recommendation": "CVE not found on cve.org.", "details": {}}
+            
+            cna = data['containers']['cna']
+            description = cna['descriptions'][0]['value'] if 'descriptions' in cna else "No description available."
+            
+            severity = "unknown"
+            score = "unknown"
+            cvss_vector = "N/A"
+            
+            if 'metrics' in cna and cna['metrics']:
+                metric = cna['metrics'][0]
+                if 'cvssV4_0' in metric:
+                    severity = metric['cvssV4_0']['baseSeverity']
+                    score = metric['cvssV4_0']['baseScore']
+                    cvss_vector = metric['cvssV4_0']['vectorString']
+                elif 'cvssV3_1' in metric:
+                    severity = metric['cvssV3_1']['baseSeverity']
+                    score = metric['cvssV3_1']['baseScore']
+                    cvss_vector = metric['cvssV3_1']['vectorString']
+                elif 'cvssV3_0' in metric:
+                    severity = metric['cvssV3_0']['baseSeverity']
+                    score = metric['cvssV3_0']['baseScore']
+                    cvss_vector = metric['cvssV3_0']['vectorString']
+                elif 'cvssV2_0' in metric:
+                    severity = metric['cvssV2_0']['baseSeverity']
+                    score = metric['cvssV2_0']['baseScore']
+                    cvss_vector = metric['cvssV2_0']['vectorString']
+            
+            # Recommendation (same logic)
+            if severity in ["CRITICAL", "HIGH"]:
+                recommendation = "Patch immediately."
+            elif severity == "MEDIUM":
+                recommendation = "Patch within 30 days."
+            elif severity == "LOW":
+                recommendation = "Monitor and patch as needed."
+            else:
+                recommendation = "Review for applicability."
+            
+            details = {
+                "cve_id": cve_id,
+                "published": cna.get('published', 'N/A'),
+                "last_modified": cna.get('lastModified', 'N/A'),
+                "cvss_score": score,
+                "cvss_vector": cvss_vector,
+                "description": description,
+                "affected_system": affected_system,
+                "source": "cve.org (fallback)"
+            }
+            
+            return {"severity": severity, "recommendation": recommendation, "details": details}
+        
+        except Exception as fallback_e:
+            return {"severity": "error", "recommendation": f"Failed to triage (NVD error: {str(e)}; cve.org error: {str(fallback_e)})", "details": {}}
+
 
 search_agent = Agent(
     model='gemini-2.5-flash',
@@ -282,7 +345,7 @@ vuln_triage_agent = Agent(
             // Output from check_package_license or parse_sbom
         }
         ```
-    - Summarise the above json output.
+    - Summarise the above json output and provide the output in bullet points.
     """,
     tools=[agent_tool.AgentTool(agent=search_agent),triage_vulnerability, check_package_license, parse_sbom]
 )
