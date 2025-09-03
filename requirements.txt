@@ -3,6 +3,11 @@ psutil
 google-generativeai
 google-cloud-asset
 google-cloud-securitycenter
+google-cloud-iam
+google-api-python-client
+google-cloud-recommender
+google-cloud-org-policy
+google-auth
 python-dotenv
 PyPDF2
 Pillow
@@ -12,3 +17,5 @@ python-docx
 atlassian-python-api
 requests
 nvdlib
+pytz
+datetime

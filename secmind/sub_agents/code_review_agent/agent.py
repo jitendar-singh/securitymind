@@ -32,7 +32,7 @@ def review_code(code_snippet: str) -> dict:
     genai.configure(api_key=api_key)
     
     model = genai.GenerativeModel(
-        'gemini-2.5-flash',  # Use 1.5-flash or pro for schema support
+        'gemini-2.5-flash', 
     )
     
     # Step 1: Auto-detect the language
