@@ -22,7 +22,7 @@ def review_code(code_snippet: str) -> dict:
     """
     Performs a code review on the provided code snippet using Gemini AI model.
     Auto-detects the programming language.
-    Focuses on code smells, readability, efficiency, security, and provides developer-like feedback.
+    Focuses on code smells mentioned in the code_smells_list, readability, efficiency, security, and provides developer-like feedback.
     Supports multiple programming languages.
     """
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -134,9 +134,7 @@ code_review_agent = Agent(
         The user can provide either a direct code snippet or a GitHub pull request URL. Your goal is to provide a thorough review and suggest necessary fixes.
         If the user provides a GitHub pull request URL, fetch the diff using get_github_pr_diff first.
         Then, review the code using review_code.
-        If issues are found, prepare a list of Jira tickets for the development team to address.
         Make sure to explain the issues clearly and suggest fixes where possible.
         """,
-    # tools=[google_search]
     tools=[review_code, get_github_pr_diff]
 )
