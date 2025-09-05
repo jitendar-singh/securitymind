@@ -13,7 +13,7 @@ load_dotenv()
 COPYLEFT_LICENSES = {"GPL", "AGPL", "LGPL", "MPL", "EPL", "CDDL"}
 
 
-def triage_vulnerability(vuln_description: str, affected_system: str = "") -> dict:
+def triage_vulnerability(vuln_description: str) -> dict:
     """
     Triages a vulnerability by extracting the CVE ID from the description and querying the NVD API for details.
     Falls back to cve.org API if NVD is unavailable.
@@ -80,8 +80,7 @@ def triage_vulnerability(vuln_description: str, affected_system: str = "") -> di
             "last_modified": cve.lastModified,
             "cvss_score": score,
             "cvss_vector": cvss_vector,
-            "description": description,
-            "affected_system": affected_system
+            "description": description
         }
         
         return {"severity": severity, "recommendation": recommendation, "details": details}
@@ -141,7 +140,6 @@ def triage_vulnerability(vuln_description: str, affected_system: str = "") -> di
                 "cvss_score": score,
                 "cvss_vector": cvss_vector,
                 "description": description,
-                "affected_system": affected_system,
                 "source": "cve.org (fallback)"
             }
             
@@ -253,7 +251,7 @@ vuln_triage_agent = Agent(
     description = "Triages vulnerabilities and verifies software package licenses across multiple ecosystems, with optional SBOM parsing support.",
 
     instruction = """
-    1. **Vulnerability Triage**:
+    For Vulnerability Triage:
     - Use `triage_vulnerability` to assess and categorize vulnerabilities.
     - This includes identifying severity, exploitability, and remediation priority.
     - Input may include CVE identifiers, vulnerability descriptions, or metadata.
@@ -277,7 +275,7 @@ vuln_triage_agent = Agent(
         - Conclude with a note about remaining patches and urgency.
         - A section for next steps: Provide a concise plan with priority and urgency for each detected vulnerability. Include steps for external patching and internal testing or fixes.
 
-    2. **License Checking**:
+    For License Checking:
     - Prompt the user for:
         - Package name
         - Ecosystem (default: 'pypi'; supported: 'npm', 'maven', 'rubygems', 'nuget', 'apt')
@@ -293,12 +291,13 @@ vuln_triage_agent = Agent(
         - License: MIT
         - Is Copyleft: False
         ```
-    - Optionally perform a web search by using the search_agent if the license information is not immediately available.
+    - Optionally perform a web search by using the search_agent only if the license information is not immediately available and for no other purpose.
     - Handle errors such as network issues, API failures, and missing license information.
     - Ensure that the license information provided is accurate, up-to-date, and compatible with the software's usage policies.
     - Example operations:
         - Extract license information from the package metadata.
         - Perform a web search using search_agent if the license information is not found in metadata.
+        - Use the search_agent only for searching the license information if it is not immediately available and for no other purpose.
         - Verify license compatibility and compliance with usage policies.
         - Provide detailed analysis and recommendations if necessary.
         - Output examples:
@@ -317,16 +316,7 @@ vuln_triage_agent = Agent(
         - Verify the license is valid, compatible, and compliant with usage policies.
         - Provide details on the license status and any necessary actions.
         - Ensure the agent is aware of known copyleft licenses such as GPL, AGPL, LGPL, MPL, EPL, etc.
-    - Example use case:
-        - The agent is tasked with checking the license for a given package in a specified ecosystem.
-        - The package metadata does not contain license information.
-        - The agent performs a web search to retrieve license details.
-        - The retrieved license is verified to be compatible with the usage policies.
-        - The agent returns the license information, indicating it is not copyleft.
-        - If the retrieved license information is missing or incomplete, the agent initiates a search until sufficient details are found.
-        - The agent ensures the license is valid, compatible, and compliant with usage policies.
     - Ensure the agent's understanding and handling of license information is accurate and up-to-date.
-    - Support the agent's ability to perform web searches if license information is not immediately available.
     - Ensure the agent's operations are compatible with known copyleft licenses such as GPL, AGPL, LGPL, MPL, EPL, etc.
 
     3. **SBOM Parsing (Optional)**:
@@ -334,18 +324,9 @@ vuln_triage_agent = Agent(
     - This extracts package names, versions, and associated licenses from the SBOM.
     - Parsed data can be used to batch process license checks or vulnerability triage.
 
-    4. **Output Format**:
-    - Return a structured JSON object containing results from both operations:
-        ```json
-        {
-        "triage": {
-            // Output from triage_vulnerability
-        },
-        "license_check": {
-            // Output from check_package_license or parse_sbom
-        }
-        ```
-    - Summarise the above json output and provide the output in bullet points.
+    - Summarise the output and provide the output in bullet points.
+
+    Don't answer any other queries or perform any tasks.
     """,
     tools=[agent_tool.AgentTool(agent=search_agent),triage_vulnerability, check_package_license, parse_sbom]
 )

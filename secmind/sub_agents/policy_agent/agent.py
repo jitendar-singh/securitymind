@@ -61,11 +61,15 @@ def list_policy_documents() -> dict:
 policy_agent = Agent(
     name="policy_agent",
     model="gemini-2.5-flash",
-    description="Reads policies from local files or Confluence.",
+    description="Reads policies from local files and answers to user questions from the policy files.",
     instruction="""
-    Answer from local or Confluence policies.
+    Answer from local policies.
     Use read_policy_file/list_policy_documents for local.
-    Use read_confluence_policy for Confluence.
+    Example:
+    What is mentioned about SLA in vulenerability management policy?
+    Policy Agent will read vulnerabilty-manegment-policy.txt from local and will answer the question.
+    As per open source license policy which license are categorized as copy left?
+    Policy Agent will read open-source-license-policy.txt from local and will answer the question.
     """,
     tools=[read_policy_file, list_policy_documents]
 )
