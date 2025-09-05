@@ -1,20 +1,35 @@
-# SecurityMind
+# Security Mind: AI-Powered Application Security Posture Management (ASPM) Platform
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jitendar-singh/securitymind/actions)
 [![Security](https://img.shields.io/badge/security-active-green.svg)](https://github.com/jitendar-singh/securitymind/security)
 
-SecurityMind is an AI-powered security agent built using Google’s Agent Development Kit (ADK). It acts as a central orchestrator for security operations, delegating tasks to specialized sub-agents for efficient handling of vulnerabilities, code reviews, policies, and more.
+Security Mind is an innovative, multi-agent AI system designed to enhance application security posture management (ASPM). Built on advanced AI architectures, it leverages collaborative agents to automate security workflows, identify risks, ensure compliance, and support DevSecOps practices. Whether you’re triaging vulnerabilities, reviewing code, or generating reports, Security Mind provides intelligent, actionable insights to secure your applications throughout the software development lifecycle.
 
-## 🚀 Capabilities
+## Key highlights:
 
-- **Task Delegation**: Routes security queries to appropriate sub-agents.
-- **Security Orchestration**: Manages workflows across vulnerability triage, code reviews, Jira issue creation, and policy retrieval.
-- **Auto-Detection**: Automatically detects package ecosystems for license checks and parses SBOM files for bulk analysis.
+- **Multi-Agent Architecture:** Specialized agents (e.g., compliance, threat detection, remediation) work together for complex tasks.
+- **Integration-Friendly:** Supports tools like Jira, GitHub, and cloud APIs (e.g., GCP, AWS).
+- **AI-Powered:** Utilizes LLMs for natural language queries, threat modeling, and policy interpretation.
+- **Focus Areas:** Vulnerability management, license compliance, code reviews, and more.
 
-## 🧠 Delegated Agents
+Security Mind is ideal for security engineers, developers, and compliance teams aiming to reduce risk exposure and accelerate secure development.
 
-### 🔍 vuln_triage_agent
+## 🚀 Features
+
+- **Security Posture Reporting:** Generate comprehensive reports on project security, including access management, vulnerabilities, and compliance gaps.
+- **CVE Triage:** Analyze CVEs for severity, impact, affected versions, and mitigation strategies.
+- **License Compliance Checks:** Review open-source packages for license types (e.g., MIT, GPL) and policy adherence.
+- **Policy Interpretation:** Query security policies for details like copyleft licenses or SLAs in vulnerability management.
+- **Code/PR Reviews:** Scan pull requests for security issues, best practices, and vulnerabilities.
+- **Ticket Creation:** Automate Jira (or similar) ticket generation for issues and remediations.
+- **Threat Modeling:** Perform structured threat assessments using frameworks like STRIDE.
+- **Cloud Resource Scanning:** List and audit resources (e.g., in GCP) for security misconfigurations.
+- **Extensible:** Easily add custom agents or tools for specific use cases.
+
+## Examples
+
+### 🛡️ Triage a CVE
 
 - **Description**: Triages vulnerabilities using NVD API and checks licenses across ecosystems (pypi, npm, maven, etc.) with auto-detection and web search fallbacks.
 - **Prompt Examples**:
@@ -48,7 +63,8 @@ SecurityMind is an AI-powered security agent built using Google’s Agent Develo
 - **Description**: Inventories GCP resources and assesses security posture using Cloud Asset Inventory and Security Command Center APIs. Supports overall posture summaries with findings by severity.
 - **Prompt Examples**:
   - `"Check resources in project my-project-id"`
-  - `"Assess security posture for project my-project-id"`
+  - `"IAM Recommendations for (Least Privilege)"`
+  - `"Identified service account access keys older than the recommended 90 days."`
   - `"Check overall security posture of GCP project my-project-id"`
 
 ### 🔒 app_sec_review_agent
@@ -120,6 +136,28 @@ response = secmind.handle_request("Check overall security posture for projects/m
 # App sec review
 response = secmind.handle_request("App sec review: Framework - .NET, Deployment - GCP")
 ```
+
+## FAQ
+**Q: Does SecMind require internet access?**
+- `"Yes, for API integrations and real-time data; offline mode available for local scans."`
+
+**Q: Is it secure?**
+- `"Yes, uses encrypted connections; no user data stored."`
+
+**Q: Supported clouds?**
+- `"GCP (primary), AWS, Azure (beta)."`
+
+**Q: How to extend?**
+- `"Add agents via Python classes; see docs."`
+
+
+## Roadmap
+- **v1.0:** Core features (current).
+- **v1.1:** AWS/Azure full support, UI dashboard.
+- **v1.2:** ML-based anomaly detection.
+- **v2.0:** Enterprise integrations (e.g., Splunk, SIEM).
+Track progress on GitHub Issues.
+
 
 ## 🤝 Contributing
 
