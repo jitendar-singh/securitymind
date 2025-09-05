@@ -137,6 +137,10 @@ response = secmind.handle_request("Check overall security posture for projects/m
 response = secmind.handle_request("App sec review: Framework - .NET, Deployment - GCP")
 ```
 
+## Workflow
+
+![secmind-workflow](https://github.com/user-attachments/assets/40c17280-4b1d-4425-8778-ea9f5769c292)
+
 ## FAQ
 **Q: Does SecMind require internet access?**
 - `"Yes, for API integrations and real-time data; offline mode available for local scans."`
