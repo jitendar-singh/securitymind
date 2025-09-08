@@ -1,4 +1,4 @@
-# Security Mind: AI-Powered Application Security Posture Management (ASPM) Platform
+# Security Mind: AI-Powered Security Posture Management (ASPM) Platform
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jitendar-singh/securitymind/actions)
