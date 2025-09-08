@@ -4,7 +4,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jitendar-singh/securitymind/actions)
 [![Security](https://img.shields.io/badge/security-active-green.svg)](https://github.com/jitendar-singh/securitymind/security)
 
-Security Mind is an innovative, multi-agent AI system designed to enhance application security posture management (ASPM). Built on advanced AI architectures, it leverages collaborative agents to automate security workflows, identify risks, ensure compliance, and support DevSecOps practices. Whether you’re triaging vulnerabilities, reviewing code, or generating reports, Security Mind provides intelligent, actionable insights to secure your applications throughout the software development lifecycle.
+Security Mind is an innovative, multi-agent AI system designed to enhance security posture management (ASPM). Built on advanced AI architectures, it leverages collaborative agents to automate security workflows, identify risks, ensure compliance, and support DevSecOps practices. Whether you’re triaging vulnerabilities, reviewing code, or generating reports, Security Mind provides intelligent, actionable insights to secure your applications throughout the software development lifecycle.
 
 ## Key highlights:
 
