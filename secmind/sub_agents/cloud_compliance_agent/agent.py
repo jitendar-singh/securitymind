@@ -1,272 +1,293 @@
-# secmind/sub_agents/cloud_compliance/agent.py (rewritten file)
+"""
+Cloud Compliance Agent - Refactored Version.
 
-import os
-from datetime import datetime, timezone
-from google.cloud import asset_v1
-from google.cloud import securitycenter_v1
-from google.cloud import recommender_v1
-from google.cloud import orgpolicy_v2
-from google.cloud import iam_admin_v1
-from google.cloud.iam_admin_v1 import types
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
+This is the main agent module that orchestrates GCP compliance checking.
+It uses a modular architecture with separated concerns for better maintainability.
+"""
+
+import logging
+from typing import Optional
+
 from google.adk.agents import Agent
-from google.protobuf.json_format import MessageToDict
+from .gcp_client import GCPClient
 
-def list_gcp_resources(project_id: str, resource_type: str = 'all'):
-    # Example: Using Asset API for resource inventory; adjust based on your exact API
-    client = asset_v1.AssetServiceClient()  # Or whichever client you're using
-    parent = f"projects/{project_id}"
+from .models import APIResponse
+from .instruction_builder import (
+    build_agent_instructions,
+    build_short_description,
+    build_agent_name,
+)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# TOOL FUNCTIONS
+# ============================================================================
+# These functions are exposed as tools to the agent. They provide a clean
+# interface between the agent and the GCP client.
+
+# Global GCP client instance (initialized lazily)
+_gcp_client: Optional[GCPClient] = None
+
+
+def _get_gcp_client() -> GCPClient:
+    """Get or create the global GCP client instance."""
+    global _gcp_client
+    if _gcp_client is None:
+        _gcp_client = GCPClient()
+        logger.info("Initialized GCP client")
+    return _gcp_client
+
+
+def list_gcp_resources(
+    scope: str,
+    resource_types: Optional[list[str]] = None
+) -> dict:
+    """
+    List GCP resources using Asset Inventory API.
     
-    # Call to list resources (this returns a protobuf response or iterable of messages)
-    response = client.search_all_resources(request={"scope": parent})  # Or list_projects(), etc.
+    Args:
+        scope: Scope to search (e.g., "projects/my-project", "organizations/123")
+        resource_types: List of specific resource types to filter (None for all)
     
-    # The fix: Convert to dict before serializing/returning
-    # If response is a single message: resources = MessageToDict(response)
-    # If it's an iterable/paginator, convert each item
-    resources = []
-    for item in response:  # Assuming it's iterable; adjust if it's a single response
-        resource_dict = MessageToDict(item._pb if hasattr(item, '_pb') else item)
-        resources.append(resource_dict)
+    Returns:
+        Dictionary with status, data, and message
     
-    # Now you can safely json.dumps(resources) or return it
-    return resources  # Or json.dumps(resources) if needed for output
+    Example:
+        >>> list_gcp_resources("projects/my-project")
+        >>> list_gcp_resources("projects/my-project", ["compute.googleapis.com/Instance"])
+    """
+    logger.info(f"Tool called: list_gcp_resources(scope={scope}, resource_types={resource_types})")
+    
+    client = _get_gcp_client()
+    response = client.list_resources(scope=scope, asset_types=resource_types)
+    
+    return response.to_dict()
+
 
 def list_security_sources(parent: str) -> dict:
     """
-    Lists security sources in Security Command Center for the given parent (e.g., 'organizations/{org_id}', 'projects/{project_id}', or 'folders/{folder_id}').
+    List security sources in Security Command Center.
+    
+    Args:
+        parent: Parent resource (e.g., "organizations/123", "projects/my-project")
+    
+    Returns:
+        Dictionary with status, data, and message
+    
+    Example:
+        >>> list_security_sources("organizations/123456789")
+        >>> list_security_sources("projects/my-project")
     """
-    try:
-        client = securitycenter_v1.SecurityCenterClient()
-        sources = []
-        for source in client.list_sources(request={"parent": parent}):
-            sources.append({
-                "name": source.name,
-                "display_name": source.display_name,
-                "description": source.description,
-                "source_id": source.name.split('/')[-1]  # Extract the source_id
-            })
-        return {"status": "success", "sources": sources}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    logger.info(f"Tool called: list_security_sources(parent={parent})")
+    
+    client = _get_gcp_client()
+    response = client.list_security_sources(parent=parent)
+    
+    return response.to_dict()
 
-def check_security_posture(parent: str, source_id: str) -> dict:
+
+def check_security_posture(
+    parent: str,
+    source_id: Optional[str] = None
+) -> dict:
     """
-    Checks cloud security posture using Security Command Center API for overall findings.
-    parent: e.g., 'projects/{project_id}' or 'organizations/{org_id}'
-    source_id: Optional; if provided, filters to that source; else, queries all ('-').
+    Check cloud security posture using Security Command Center.
+    
+    Args:
+        parent: Parent resource (e.g., "organizations/123", "projects/my-project")
+        source_id: Specific source ID to filter (use "-" for all sources, None defaults to all)
+    
+    Returns:
+        Dictionary with findings and summary statistics
+    
+    Example:
+        >>> check_security_posture("projects/my-project")
+        >>> check_security_posture("organizations/123", source_id="specific-source-id")
     """
-    try:
-        client = securitycenter_v1.SecurityCenterClient()
-        source_parent = f"{parent}/sources/{source_id}" if source_id else f"{parent}/sources/-"
-        response = client.list_findings(request={"parent": source_parent})
-        findings = []
-        for finding in response.list_findings_results:
-            findings.append({
-                "name": finding.finding.name,
-                "severity": finding.finding.severity,
-                "category": finding.finding.category,
-                "description": finding.finding.description,
-                "state": finding.finding.state,
-                "resource_name": finding.finding.resource_name
-            })
-        # Basic summary for overall posture
-        summary = {
-            "total_findings": len(findings),
-            "critical_count": sum(1 for f in findings if f['severity'] == 'CRITICAL'),
-            "high_count": sum(1 for f in findings if f['severity'] == 'HIGH'),
-            "medium_count": sum(1 for f in findings if f['severity'] == 'MEDIUM'),
-            "low_count": sum(1 for f in findings if f['severity'] == 'LOW')
-        }
-        return {"status": "success", "findings": findings, "summary": summary}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    logger.info(f"Tool called: check_security_posture(parent={parent}, source_id={source_id})")
+    
+    # Default to all sources if not specified
+    if source_id is None:
+        source_id = "-"
+    
+    client = _get_gcp_client()
+    response = client.list_findings(parent=parent, source_id=source_id)
+    
+    return response.to_dict()
+
 
 def check_iam_recommendations(project_id: str) -> dict:
     """
-    Checks IAM recommendations for least privilege using Recommender API.
+    Check IAM recommendations for least privilege using Recommender API.
+    
+    Args:
+        project_id: GCP project ID (e.g., "my-project")
+    
+    Returns:
+        Dictionary with IAM recommendations and summary
+    
+    Example:
+        >>> check_iam_recommendations("my-project")
     """
-    try:
-        client = recommender_v1.RecommenderClient()
-        parent = f"projects/{project_id}/locations/global/recommenders/google.iam.policy.Recommender"
-        print(parent)
-        recommendations = []
-        for reco in client.list_recommendations(parent=parent):
-            recommendations.append({
-                "name": reco.name,
-                "description": reco.description,
-                "priority": reco.priority
-            })
-        summary = f"{len(recommendations)} IAM recommendations found. Focus on reducing privileges."
-        # print(f'recommendations: {recommendations}, summary: {summary}')
-        return {"status": "success", "recommendations": recommendations, "summary": summary}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    logger.info(f"Tool called: check_iam_recommendations(project_id={project_id})")
+    
+    client = _get_gcp_client()
+    response = client.list_iam_recommendations(project_id=project_id)
+    
+    return response.to_dict()
+
 
 def check_org_policies(organization_id: str) -> dict:
     """
-    Checks organization policies for compliance using Organization Policy API.
-    """
-    try:
-        client = orgpolicy_v2.OrgPolicyClient()
-        parent = f"organizations/{organization_id}"
-        policies = []
-        for policy in client.list_policies(parent=parent):
-            policies.append({
-                "name": policy.name,
-                "rules": [rule.values for rule in policy.rules] if policy.rules else [],
-                "etag": policy.etag
-            })
-        summary = f"{len(policies)} policies listed. Verify compliance rules (e.g., restrict public buckets)."
-        return {"status": "success", "policies": policies, "summary": summary}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    Check organization policies for compliance.
     
-def check_access_keys(project_id: str, max_age_days: int = 90) -> dict:
+    Args:
+        organization_id: GCP organization ID (numeric, e.g., "123456789")
+    
+    Returns:
+        Dictionary with organization policies and compliance status
+    
+    Example:
+        >>> check_org_policies("123456789")
     """
-    Lists and checks IAM service account keys for rotation.
-    """
-    try:
-        # Initialize the IAM client
-        client = iam_admin_v1.IAMClient()
-        keys = []
-        non_compliant = []
-        for sa in client.list_service_accounts(request={"name": f"projects/{project_id}"}):
-            sa_name = sa.name
-            # Build the request
-            request = types.ListServiceAccountKeysRequest()
-            request.name = f"{sa_name}"
-            
-            # Call the API
-            response = client.list_service_account_keys(request=request)
-        
-            # If no keys, or for additional logic
-            if not response.keys:
-                print("No keys found for this service account.")
+    logger.info(f"Tool called: check_org_policies(organization_id={organization_id})")
+    
+    parent = f"organizations/{organization_id}"
+    client = _get_gcp_client()
+    response = client.list_org_policies(parent=parent)
+    
+    return response.to_dict()
 
-            for key in response.keys:
-                create_time = key.valid_after_time
-                age_days = (datetime.now(timezone.utc) - create_time).days
-                keys.append({
-                    "key_name": key.name,
-                    "create_time": str(create_time),
-                    "age_days": age_days
-                })
-                if age_days > max_age_days:
-                    non_compliant.append(key.name)
-            summary = f"{len(non_compliant)} keys older than {max_age_days} days. Recommend rotation."
-        return {"status": "success", "keys": keys, "non_compliant": non_compliant, "summary": summary}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
-def check_mfa_and_password_policy(domain: str) -> dict:
+def check_access_keys(
+    project_id: str,
+    max_age_days: int = 90
+) -> dict:
     """
-    Checks MFA enrollment and password policy using Google Admin SDK.
-    domain: Google Workspace domain.
+    List and check IAM service account keys for rotation compliance.
+    
+    Args:
+        project_id: GCP project ID (e.g., "my-project")
+        max_age_days: Maximum age in days for compliance (default: 90)
+    
+    Returns:
+        Dictionary with keys, non-compliant keys, and summary
+    
+    Example:
+        >>> check_access_keys("my-project")
+        >>> check_access_keys("my-project", max_age_days=30)
     """
-    try:
-        credentials = service_account.Credentials.from_service_account_file(
-            os.getenv('GOOGLE_API_KEY'),
-            scopes=['https://www.googleapis.com/auth/admin.directory.user']
-        )
-        service = build('admin', 'directory_v1', credentials=credentials)
-        
-        # MFA check
-        users = service.users().list(domain=domain).execute().get('users', [])
-        mfa_status = []
-        for user in users:
-            user_details = service.users().get(userKey=user['primaryEmail']).execute()
-            mfa_enabled = user_details.get('isEnrolledIn2Sv', False)
-            is_privileged = user_details.get('isAdmin', False) or user_details.get('isDelegatedAdmin', False)
-            mfa_status.append({
-                "user": user['primaryEmail'],
-                "mfa_enabled": mfa_enabled,
-                "privileged": is_privileged,
-                "note": "Needs MFA" if is_privileged and not mfa_enabled else "Compliant"
-            })
-        
-        # Password policy (simplified; actual policy via Cloud Identity or manual check)
-        # Note: Password policy is org-level; fetch via API if enabled
-        password_policy = {"min_length": 8, "require_complexity": True}  # Placeholder; use real API if available
-        
-        non_compliant_mfa = sum(1 for s in mfa_status if not s['mfa_enabled'] and s['privileged'])
-        summary = f"{non_compliant_mfa} privileged users without MFA. Password policy: Min length {password_policy['min_length']}, complexity {password_policy['require_complexity']}."
-        return {"status": "success", "mfa_status": mfa_status, "password_policy": password_policy, "summary": summary}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    logger.info(f"Tool called: check_access_keys(project_id={project_id}, max_age_days={max_age_days})")
+    
+    client = _get_gcp_client()
+    response = client.list_service_account_keys(
+        project_id=project_id,
+        max_age_days=max_age_days
+    )
+    
+    return response.to_dict()
 
+
+# ============================================================================
+# AGENT DEFINITION
+# ============================================================================
+
+# Define the tools available to the agent
+AGENT_TOOLS = [
+    list_gcp_resources,
+    list_security_sources,
+    check_security_posture,
+    check_iam_recommendations,
+    check_org_policies,
+    check_access_keys,
+]
+
+# Create the agent instance
 cloud_compliance_agent = Agent(
-    name="cloud_compliance_agent",
+    name=build_agent_name(),
     model="gemini-2.5-flash",
-    description="Checks GCP resources, security posture, IAM recommendations, org policies, access keys, MFA, and password policies.",
-    instruction="""You are a cloud compliance agent for GCP focused on overall security posture assessment. 
-    For queries like 'check overall security posture of GCP project', first ask for parent i.e project_id or org_id if not provided.
-    Then, use list_security_sources to discover sources.
-    Use check_security_posture with '-' for all sources to get findings and summary.  
-    Use list_gcp_resources for resource inventory.
-    Use list_security_sources and check_security_posture for SCC findings.
-    Optionally, use list_gcp_resources (with asset_types=None for all) to inventory resources and correlate with findings.
-    Provide a comprehensive summary: total findings by severity, key risks, recommendations.
-    For IAM/compliance:
-    - Least privilege: Use check_iam_recommendations (ask for project_id if not already provided).
-    - Access key rotation: Use check_access_keys (ask for project_id if not provided and if max_age_days is not provided fallback to use 90 days as default).
-    Categorize outputs (e.g., under IAM, Policies).
-    Ask for missing info.
-    Provide summaries with recommendations (e.g., rotate keys, enable MFA for admins).
-    Generate comprehensive report with clear sections (e.g., Overall Security Posture, IAM Controls, Policies).
-    Example report format:
-    Overall Security Posture:
-    1. Total Findings: X
-    2. Critical: Y
-    3. High: Z
-    4. Medium: A
-    5. Low: B
-    Key Risks:
-    - Risk description (e.g., public access to data)
-    Recommendations:
-    - Fix this, review that, etc.
-    IAM Controls:
-    1. Recommendations:
-    - Fix
-    - Fix
-    Policies:
-    1. Non-Compliant: A
-    - Issue summary
-    Security Recommendations:
-    1. Least Privilege - Use IAM least privilege recommendations.
-    2. Policies - Ensure compliance with organization policies.
-    3. Access Keys - Rotate IAM service account keys.
-    
-    Please implement the below instructions to complete the task.
-    Provide the list of all GCP resources first.
-    Then, check security posture.
-    Finally, perform IAM recommendations, organizational policies, access keys, and MFA/ Password policies checks.
-    Generate a comprehensive report for the above tasks.
-    Include the below details in the report.
-    Summary of GCP Resources and Security Findings:
-    1. Resource type and details found.
-    2. Security findings, categories, severity, state.
-    3. Detailed explanation of any anomalies found.
-    4. Provide remediation steps for any vulnerabilities found..
-    Ensure that the output is well-structured and easy to read.
-    Example format for reporting:
-    Highlights of findings: Quick summary of key findings.
-    Detailed findings analysis:
-        - Detailed description of each finding and its impact.
-        - Security posture snapshot (overall score and categories).
-    Remediation recommendations:
-        - Specific steps to mitigate detected vulnerabilities.
-    Ensure the findings and recommendations are actionable and clear.
-    Add relevant links for further reading on GCP security best practices.
-    For large reports, segment the output to include:
-    - Summary
-    - Detailed findings
-    - Remediation recommendations
-    - Findings overview and quick remediation guidelines
-    - Security posture snapshot and actionable insights
-    - Conclusion and best practices.
-    The same details should also be generated for IAM recommendations, organizational policies, access keys, and policies checks.
-
-    """,
-    tools=[list_gcp_resources, list_security_sources, check_security_posture, check_iam_recommendations,check_access_keys]
+    description=build_short_description(),
+    instruction=build_agent_instructions(),
+    tools=AGENT_TOOLS,
 )
+
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def validate_project_id(project_id: str) -> bool:
+    """
+    Validate GCP project ID format.
+    
+    Args:
+        project_id: Project ID to validate
+    
+    Returns:
+        True if valid, False otherwise
+    """
+    import re
+    pattern = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+    return bool(pattern.match(project_id))
+
+
+def validate_organization_id(org_id: str) -> bool:
+    """
+    Validate GCP organization ID format.
+    
+    Args:
+        org_id: Organization ID to validate
+    
+    Returns:
+        True if valid, False otherwise
+    """
+    import re
+    pattern = re.compile(r"^[0-9]{1,19}$")
+    return bool(pattern.match(org_id))
+
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+if __name__ == "__main__":
+    """
+    Example usage and testing.
+    """
+    logger.info("Cloud Compliance Agent initialized")
+    logger.info(f"Agent name: {cloud_compliance_agent.name}")
+    logger.info(f"Available tools: {[tool.__name__ for tool in AGENT_TOOLS]}")
+    
+    # Example: Test project ID validation
+    test_project_ids = [
+        "my-project-123",  # Valid
+        "MyProject",       # Invalid (uppercase)
+        "a",               # Invalid (too short)
+        "my_project",      # Invalid (underscore)
+    ]
+    
+    print("\nProject ID Validation Tests:")
+    for pid in test_project_ids:
+        is_valid = validate_project_id(pid)
+        print(f"  {pid}: {'✓ Valid' if is_valid else '✗ Invalid'}")
+    
+    # Example: Test organization ID validation
+    test_org_ids = [
+        "123456789",       # Valid
+        "abc123",          # Invalid (contains letters)
+        "12345678901234567890",  # Invalid (too long)
+    ]
+    
+    print("\nOrganization ID Validation Tests:")
+    for oid in test_org_ids:
+        is_valid = validate_organization_id(oid)
+        print(f"  {oid}: {'✓ Valid' if is_valid else '✗ Invalid'}")
+    
+    print("\n✅ Cloud Compliance Agent ready!")

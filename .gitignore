@@ -1,3 +1,7 @@
 **/__pycache__/**
 .venv/*
 **/policies/**
+.env
+.vscode
+.backup*
+example_sbom*
