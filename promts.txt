@@ -1,0 +1,33 @@
+what are your capabilities?
+Triage CVE-2023-45853 
+What is the license for the package @azure/identity
+Review github PR: https://github.com/modelcontextprotocol/servers/pull/2568
+What is mentioned about SLA in vulenerability management policy
+As per open source license policy which license are categorized as copy left
+Generate a report on overall security posture for projects/infrastructure
+Create a Jira ticket for 
+Perform threat modelling
+=================================================================================================
+
+
+=========================
+what are your capabilties
+
+=========================
+TRIAGE AND LICENSE Checks
+==========================
+Traige CVE-2023-45853
+License check for libdb5.3
+
+====================
+CLOUD security
+=====================
+Lists and checks IAM service account keys for rotation for project devops
+Checks IAM recommendations for least privilege
+Checks cloud security posture
+
+=======================
+Policy interpretation
+=======================
+Summarise open source license procedure
+
