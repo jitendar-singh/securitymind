@@ -60,12 +60,18 @@ Security Mind is ideal for security engineers, developers, and compliance teams 
 
 ### ☁️ cloud_compliance_agent
 
-- **Description**: Inventories GCP resources and assesses security posture using Cloud Asset Inventory and Security Command Center APIs. Supports overall posture summaries with findings by severity.
+- **Description**: Inventories resources and assesses security posture across multiple cloud environments (GCP, AWS, and Azure). It uses native APIs like Cloud Asset Inventory, Security Command Center, AWS IAM Access Analyzer, and Azure Security Center to provide a unified view of your security posture. For detailed, provider-specific information, please refer to the README files in the respective client directories:
+  - [GCP](./secmind/sub_agents/cloud_compliance_agent/clients/gcp/README.md)
+  - [AWS](./secmind/sub_agents/cloud_compliance_agent/clients/aws/README.md)
+  - [Azure](./secmind/sub_agents/cloud_compliance_agent/clients/azure/README.md)
 - **Prompt Examples**:
-  - `"Check resources in project my-project-id"`
-  - `"IAM Recommendations for (Least Privilege)"`
-  - `"Identified service account access keys older than the recommended 90 days."`
+  - `"Check resources in project my-gcp-project-id"`
+  - `"IAM Recommendations for my AWS account (Least Privilege)"`
+  - `"What are the security recommendations for my Azure subscription?"`
+  - `"Identified service account access keys older than the recommended 90 days in my gcp project."`
   - `"Check overall security posture of GCP project my-project-id"`
+  - `"Check overall security posture of my AWS account"`
+  - `"Check overall security posture of my Azure subscription"`
 
 ### 🔒 app_sec_review_agent
 
@@ -149,7 +155,7 @@ response = secmind.handle_request("App sec review: Framework - .NET, Deployment 
 - `"Yes, uses encrypted connections; no user data stored."`
 
 **Q: Supported clouds?**
-- `"GCP (primary), AWS, Azure (beta)."`
+- `"GCP, AWS, and Azure are fully supported."`
 
 **Q: How to extend?**
 - `"Add agents via Python classes; see docs."`

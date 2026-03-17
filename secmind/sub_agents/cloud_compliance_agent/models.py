@@ -49,16 +49,16 @@ class ComplianceStatus(str, Enum):
 
 
 # ============================================================================
-# GCP RESOURCE MODELS
+# CLOUD RESOURCE MODELS
 # ============================================================================
 
 @dataclass
-class GCPResource:
-    """Represents a GCP resource."""
+class CloudResource:
+    """Represents a cloud resource."""
     
     name: str
     resource_type: str
-    project_id: str
+    scope_id: str  # Project ID for GCP, Account ID for AWS, Subscription ID for Azure
     location: Optional[str] = None
     labels: dict[str, str] = field(default_factory=dict)
     create_time: Optional[datetime] = None
@@ -70,7 +70,7 @@ class GCPResource:
         return {
             "name": self.name,
             "resource_type": self.resource_type,
-            "project_id": self.project_id,
+            "scope_id": self.scope_id,
             "location": self.location,
             "labels": self.labels,
             "create_time": self.create_time.isoformat() if self.create_time else None,
@@ -80,30 +80,30 @@ class GCPResource:
 
 
 @dataclass
-class ResourceInventory:
-    """Collection of GCP resources."""
+class CloudResourceInventory:
+    """Collection of cloud resources."""
     
-    resources: list[GCPResource] = field(default_factory=list)
+    resources: list[CloudResource] = field(default_factory=list)
     total_count: int = 0
     resource_types: dict[str, int] = field(default_factory=dict)
-    projects: set[str] = field(default_factory=set)
+    scopes: set[str] = field(default_factory=set)
     scan_time: datetime = field(default_factory=datetime.utcnow)
     
-    def add_resource(self, resource: GCPResource) -> None:
+    def add_resource(self, resource: CloudResource) -> None:
         """Add a resource to the inventory."""
         self.resources.append(resource)
         self.total_count += 1
         self.resource_types[resource.resource_type] = (
             self.resource_types.get(resource.resource_type, 0) + 1
         )
-        self.projects.add(resource.project_id)
+        self.scopes.add(resource.scope_id)
     
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "total_count": self.total_count,
             "resource_types": self.resource_types,
-            "projects": list(self.projects),
+            "scopes": list(self.scopes),
             "scan_time": self.scan_time.isoformat(),
             "resources": [r.to_dict() for r in self.resources],
         }
@@ -114,8 +114,8 @@ class ResourceInventory:
 # ============================================================================
 
 @dataclass
-class SecuritySource:
-    """Represents a Security Command Center source."""
+class CloudSecuritySource:
+    """Represents a security source from a cloud provider."""
     
     name: str
     display_name: str
@@ -133,8 +133,8 @@ class SecuritySource:
 
 
 @dataclass
-class SecurityFinding:
-    """Represents a security finding from Security Command Center."""
+class CloudSecurityFinding:
+    """Represents a security finding from a cloud provider."""
     
     name: str
     severity: Severity
@@ -164,10 +164,10 @@ class SecurityFinding:
 
 
 @dataclass
-class SecurityPosture:
+class CloudSecurityPosture:
     """Represents overall security posture."""
     
-    findings: list[SecurityFinding] = field(default_factory=list)
+    findings: list[CloudSecurityFinding] = field(default_factory=list)
     total_findings: int = 0
     critical_count: int = 0
     high_count: int = 0
@@ -221,8 +221,8 @@ class SecurityPosture:
 # ============================================================================
 
 @dataclass
-class IAMRecommendation:
-    """Represents an IAM recommendation."""
+class CloudIAMRecommendation:
+    """Represents an IAM recommendation from a cloud provider."""
     
     name: str
     description: str
@@ -246,8 +246,8 @@ class IAMRecommendation:
 
 
 @dataclass
-class ServiceAccountKey:
-    """Represents a service account key."""
+class CloudAccessKey:
+    """Represents a service account key or access key."""
     
     key_name: str
     service_account: str
@@ -323,7 +323,7 @@ class MFAStatus:
 # ============================================================================
 
 @dataclass
-class OrganizationPolicy:
+class CloudOrganizationPolicy:
     """Represents an organization policy."""
     
     name: str
@@ -344,7 +344,7 @@ class OrganizationPolicy:
 
 
 @dataclass
-class PolicyCompliance:
+class CloudPolicyCompliance:
     """Represents policy compliance status."""
     
     policy_name: str
@@ -367,22 +367,22 @@ class PolicyCompliance:
 # ============================================================================
 
 @dataclass
-class ComplianceReport:
+class CloudComplianceReport:
     """Comprehensive compliance report."""
     
     report_id: str
     generated_at: datetime = field(default_factory=datetime.utcnow)
-    project_id: Optional[str] = None
-    organization_id: Optional[str] = None
+    scope_id: Optional[str] = None
+    cloud_provider: Optional[str] = None
     
     # Report sections
-    resource_inventory: Optional[ResourceInventory] = None
-    security_posture: Optional[SecurityPosture] = None
-    iam_recommendations: list[IAMRecommendation] = field(default_factory=list)
-    organization_policies: list[OrganizationPolicy] = field(default_factory=list)
-    service_account_keys: list[ServiceAccountKey] = field(default_factory=list)
+    resource_inventory: Optional[CloudResourceInventory] = None
+    security_posture: Optional[CloudSecurityPosture] = None
+    iam_recommendations: list[CloudIAMRecommendation] = field(default_factory=list)
+    organization_policies: list[CloudOrganizationPolicy] = field(default_factory=list)
+    service_account_keys: list[CloudAccessKey] = field(default_factory=list)
     mfa_status: list[MFAStatus] = field(default_factory=list)
-    policy_compliance: list[PolicyCompliance] = field(default_factory=list)
+    policy_compliance: list[CloudPolicyCompliance] = field(default_factory=list)
     
     # Summary statistics
     overall_risk_score: int = 0
@@ -415,8 +415,8 @@ class ComplianceReport:
         return {
             "report_id": self.report_id,
             "generated_at": self.generated_at.isoformat(),
-            "project_id": self.project_id,
-            "organization_id": self.organization_id,
+            "scope_id": self.scope_id,
+            "cloud_provider": self.cloud_provider,
             "overall_risk_score": self.overall_risk_score,
             "compliance_percentage": self.compliance_percentage,
             "critical_issues_count": self.critical_issues_count,
