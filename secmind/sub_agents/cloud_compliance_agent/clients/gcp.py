@@ -26,14 +26,15 @@ from google.protobuf.json_format import MessageToDict
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-from .constants import (
+from ..constants import (
     DEFAULT_API_TIMEOUT,
     MAX_RETRIES,
     RETRY_BACKOFF_FACTOR,
     RETRY_INITIAL_DELAY,
     ErrorMessage,
 )
-from .models import APIResponse
+from ..models import APIResponse
+from .base import BaseClient
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -156,7 +157,7 @@ def handle_gcp_errors(func: Callable[..., APIResponse]) -> Callable[..., APIResp
 # GCP CLIENT CLASS
 # ============================================================================
 
-class GCPClient:
+class GCPClient(BaseClient):
     """
     Robust GCP API client with error handling and retry logic.
     
@@ -374,7 +375,7 @@ class GCPClient:
     def list_iam_recommendations(
         self,
         project_id: str,
-        recommender_id: str = "google.iam.policy.Recommender"
+        recommender_id: Optional[str] = "google.iam.policy.Recommender"
     ) -> APIResponse:
         """
         List IAM recommendations for least privilege.
@@ -393,12 +394,35 @@ class GCPClient:
         
         recommendations = []
         for reco in client.list_recommendations(parent=parent):
+            details = {"operations": []}
+            try:
+                content = MessageToDict(reco.content._pb)
+                if 'operationGroups' in content and content['operationGroups']:
+                    for op_group in content['operationGroups']:
+                        operations = op_group.get('operations', [])
+                        for op in operations:
+                            op_details = {
+                                "action": op.get("action"),
+                                "resource": op.get("resource"),
+                                "path": op.get("path"),
+                                "op": op.get("op"),
+                                "value": op.get("value"),
+                                "originalValue": op.get("originalValue"),
+                            }
+                            details["operations"].append(op_details)
+                if not details["operations"]:
+                    if reco.description:
+                        details['summary'] = reco.description
+            except Exception as e:
+                logger.warning(f"Could not parse details for recommendation {reco.name}: {e}")
+
             recommendations.append({
                 "name": reco.name,
                 "description": reco.description,
                 "priority": reco.priority.name if reco.priority else "UNSPECIFIED",
                 "recommender_subtype": reco.recommender_subtype,
                 "last_refresh_time": reco.last_refresh_time.isoformat() if reco.last_refresh_time else None,
+                "details": details,
             })
         
         logger.info(f"Found {len(recommendations)} IAM recommendations")
