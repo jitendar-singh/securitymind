@@ -1,0 +1,19 @@
+{
+  "name": "secmind-client",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@copilotkit/react-core": "^1.54.0",
+    "@copilotkit/react-textarea": "^1.54.0",
+    "@copilotkit/react-ui": "^1.54.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.2"
+  }
+}

@@ -10,6 +10,7 @@ import google.generativeai as genai
 from .models import ThreatModelResult, ThreatModelReport
 from .prompt_builder import ThreatModelPromptBuilder
 from .constants import DEFAULT_MODEL, GENERATION_TEMPERATURE, MAX_RETRIES
+from secmind.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,17 +18,19 @@ logger = logging.getLogger(__name__)
 class ThreatModeler:
     """Handles threat modeling operations with Gemini AI."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = DEFAULT_MODEL):
+    def __init__(self, api_key: Optional[str] = None, model: str = DEFAULT_MODEL, memory_manager: Optional[MemoryManager] = None):
         """
         Initialize threat modeler.
         
         Args:
             api_key: Google API key (defaults to GOOGLE_API_KEY env var)
             model: Gemini model to use
+            memory_manager: Instance of MemoryManager for caching
         """
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self.model_name = model
         self.prompt_builder = ThreatModelPromptBuilder()
+        self.memory = memory_manager or MemoryManager()
         
         if not self.api_key:
             raise ValueError("Google API key not set. Set GOOGLE_API_KEY environment variable.")
@@ -38,7 +41,7 @@ class ThreatModeler:
     
     def generate_threat_model(self, app_details: Dict[str, Any]) -> ThreatModelResult:
         """
-        Generate a threat model report for an application.
+        Generate a threat model report for an application, with caching.
         
         Args:
             app_details: Dictionary containing application details
@@ -46,6 +49,15 @@ class ThreatModeler:
         Returns:
             ThreatModelResult with status and report
         """
+        # Check cache first
+        cached_report = self.memory.get_threat_model(app_details)
+        if cached_report:
+            return {
+                "status": "success",
+                "report": cached_report,
+                "message": "Report retrieved from cache."
+            }
+
         try:
             logger.info("Generating threat model...")
             
@@ -73,6 +85,9 @@ class ThreatModeler:
             
             # Validate report structure
             validated_report = self._validate_report(report_data)
+            
+            # Add to cache
+            self.memory.add_threat_model(app_details, validated_report)
             
             logger.info("Threat model generated successfully")
             return {
