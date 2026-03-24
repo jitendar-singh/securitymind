@@ -7,6 +7,8 @@ import google.generativeai as genai
 
 from pydantic import BaseModel
 
+from secmind.memory_manager import MemoryManager
+
 
 class Issue(BaseModel):
     type: str
@@ -20,11 +22,18 @@ class Review(BaseModel):
 
 def review_code(code_snippet: str) -> dict:
     """
-    Performs a code review on the provided code snippet using Gemini AI model.
+    Performs a code review on the provided code snippet using Gemini AI model, with caching.
     Auto-detects the programming language.
     Focuses on code smells mentioned in the code_smells_list, readability, efficiency, security, and provides developer-like feedback.
     Supports multiple programming languages.
     """
+    memory = MemoryManager()
+    
+    # Check cache first
+    cached_review = memory.get_code_review(code_snippet)
+    if cached_review:
+        return cached_review
+
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return {"issues": [], "fixes": [], "overall_comments": "Google API key not set."}
@@ -99,6 +108,9 @@ def review_code(code_snippet: str) -> dict:
             # Basic validation
             if not all(key in review_data for key in ["issues", "fixes", "overall_comments"]):
                 raise ValueError("Invalid response structure after fallback")
+        
+        # Add to cache
+        memory.add_code_review(code_snippet, review_data)
         
         return review_data
     

@@ -4,7 +4,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jitendar-singh/securitymind/actions)
 [![Security](https://img.shields.io/badge/security-active-green.svg)](https://github.com/jitendar-singh/securitymind/security)
 
-Security Mind is an innovative, multi-agent AI system designed to enhance security posture management (ASPM). Built on advanced AI architectures, it leverages collaborative agents to automate security workflows, identify risks, ensure compliance, and support DevSecOps practices. Whether you’re triaging vulnerabilities, reviewing code, or generating reports, Security Mind provides intelligent, actionable insights to secure your applications throughout the software development lifecycle.
+Security Mind is an innovative, multi-agent AI system designed to enhance security posture management (ASPM). Built on advanced AI architectures, it leverages collaborative agents to automate security workflows, identify risks, ensure compliance, and support DevSecOps practices. The application operates with read-only permissions, ensuring that it will not make any changes to your cloud environment. Whether you’re triaging vulnerabilities, reviewing code, or generating reports, Security Mind provides intelligent, actionable insights to secure your applications throughout the software development lifecycle.
 
 ## Key highlights:
 
@@ -111,6 +111,8 @@ SecurityMind uses these tools for delegation and execution:
 - Optional: `CONFLUENCE_URL`, etc., for policy agent.
 - `GOOGLE_APPLICATION_CREDENTIALS`: Path to GCP service account key for cloud compliance.
 - `GOOGLE_CLOUD_PROJECT`: Default GCP project ID.
+
+   **Note on Permissions:** Security Mind operates with read-only permissions. Please ensure the service account you use has the necessary read-only permissions. For a detailed list of required permissions and instructions on how to create a least-privilege custom role, please refer to the [PERMISSIONS.md](./PERMISSIONS.md) file.
 4. Run the application:
    
    ```

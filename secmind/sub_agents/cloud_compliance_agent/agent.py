@@ -23,6 +23,7 @@ from .clients.base import BaseClient
 from .clients.azure import AzureClient
 from .clients.aws import AWSClient
 from .clients.gcp import GCPClient
+from secmind.memory_manager import MemoryManager
 
 # Configure logging
 logging.basicConfig(
@@ -66,7 +67,7 @@ def list_resources(
     resource_types: Optional[list[str]] = None
 ) -> dict:
     """
-    List cloud resources using the respective cloud's Asset Inventory API.
+    List cloud resources using the respective cloud's Asset Inventory API, with caching.
     
     Args:
         cloud: The cloud provider to use (e.g., "gcp", "aws", "azure")
@@ -82,8 +83,19 @@ def list_resources(
     """
     logger.info(f"Tool called: list_resources(cloud={cloud}, scope={scope}, resource_types={resource_types})")
     
+    memory = MemoryManager()
+    
+    # Check cache first
+    cached_resources = memory.get_cloud_resources(scope, resource_types)
+    if cached_resources:
+        return cached_resources
+
     client = _get_client(cloud)
     response = client.list_resources(scope=scope, asset_types=resource_types)
+    
+    # Add to cache
+    if response.status == "success":
+        memory.add_cloud_resources(scope, resource_types, response.to_dict())
     
     return response.to_dict()
 
@@ -117,7 +129,7 @@ def check_security_posture(
     source_id: Optional[str] = None
 ) -> dict:
     """
-    Check cloud security posture using the respective cloud's Security Command Center.
+    Check cloud security posture using the respective cloud's Security Command Center, with caching.
     
     Args:
         cloud: The cloud provider to use (e.g., "gcp", "aws", "azure")
@@ -133,6 +145,13 @@ def check_security_posture(
     """
     logger.info(f"Tool called: check_security_posture(cloud={cloud}, parent={parent}, source_id={source_id})")
     
+    memory = MemoryManager()
+    
+    # Check cache first
+    cached_posture = memory.get_security_posture(parent, source_id)
+    if cached_posture:
+        return cached_posture
+
     # Default to all sources if not specified
     if source_id is None:
         source_id = "-"
@@ -140,12 +159,16 @@ def check_security_posture(
     client = _get_client(cloud)
     response = client.list_findings(parent=parent, source_id=source_id)
     
+    # Add to cache
+    if response.status == "success":
+        memory.add_security_posture(parent, source_id, response.to_dict())
+    
     return response.to_dict()
 
 
 def check_iam_recommendations(cloud: str, project_id: str) -> dict:
     """
-    Check IAM recommendations for least privilege using the respective cloud's Recommender API.
+    Check IAM recommendations for least privilege using the respective cloud's Recommender API, with caching.
     
     Args:
         cloud: The cloud provider to use (e.g., "gcp", "aws", "azure")
@@ -159,15 +182,26 @@ def check_iam_recommendations(cloud: str, project_id: str) -> dict:
     """
     logger.info(f"Tool called: check_iam_recommendations(cloud={cloud}, project_id={project_id})")
     
+    memory = MemoryManager()
+    
+    # Check cache first
+    cached_recommendations = memory.get_iam_recommendations(project_id)
+    if cached_recommendations:
+        return cached_recommendations
+
     client = _get_client(cloud)
     response = client.list_iam_recommendations(project_id=project_id)
+    
+    # Add to cache
+    if response.status == "success":
+        memory.add_iam_recommendations(project_id, response.to_dict())
     
     return response.to_dict()
 
 
 def check_org_policies(cloud: str, organization_id: str) -> dict:
     """
-    Check organization policies for compliance.
+    Check organization policies for compliance, with caching.
     
     Args:
         cloud: The cloud provider to use (e.g., "gcp", "aws", "azure")
@@ -181,9 +215,20 @@ def check_org_policies(cloud: str, organization_id: str) -> dict:
     """
     logger.info(f"Tool called: check_org_policies(cloud={cloud}, organization_id={organization_id})")
     
+    memory = MemoryManager()
+    
+    # Check cache first
+    cached_policies = memory.get_org_policies(organization_id)
+    if cached_policies:
+        return cached_policies
+
     parent = f"organizations/{organization_id}"
     client = _get_client(cloud)
     response = client.list_org_policies(parent=parent)
+    
+    # Add to cache
+    if response.status == "success":
+        memory.add_org_policies(organization_id, response.to_dict())
     
     return response.to_dict()
 
@@ -194,7 +239,7 @@ def check_access_keys(
     max_age_days: int = 90
 ) -> dict:
     """
-    List and check IAM service account keys for rotation compliance.
+    List and check IAM service account keys for rotation compliance, with caching.
     
     Args:
         cloud: The cloud provider to use (e.g., "gcp", "aws", "azure")
@@ -210,11 +255,22 @@ def check_access_keys(
     """
     logger.info(f"Tool called: check_access_keys(cloud={cloud}, project_id={project_id}, max_age_days={max_age_days})")
     
+    memory = MemoryManager()
+    
+    # Check cache first
+    cached_keys = memory.get_access_keys(project_id, max_age_days)
+    if cached_keys:
+        return cached_keys
+
     client = _get_client(cloud)
     response = client.list_service_account_keys(
         project_id=project_id,
         max_age_days=max_age_days
     )
+    
+    # Add to cache
+    if response.status == "success":
+        memory.add_access_keys(project_id, max_age_days, response.to_dict())
     
     return response.to_dict()
 
@@ -280,6 +336,25 @@ def generate_compliance_report(cloud: str, parent: str) -> dict:
         return {"status": "error", "message": f"Failed to generate report: {str(e)}"}
 
 
+from ..gcp_workload_security_agent.agent import GcpWorkloadSecurityAgent
+
+
+def check_gcp_workload_security(instruction: str) -> dict:
+    """
+    Checks the security of GCP workloads.
+
+    Args:
+        instruction: The instruction for the GCP Workload Security Agent.
+
+    Returns:
+        A dictionary with the security check results.
+    """
+    logger.info(f"Tool called: check_gcp_workload_security(instruction='{instruction}')")
+    workload_agent = GcpWorkloadSecurityAgent()
+    response = workload_agent.run(instruction)
+    return response.dict()
+
+
 # ============================================================================
 # AGENT DEFINITION
 # ============================================================================
@@ -293,6 +368,7 @@ AGENT_TOOLS = [
     check_org_policies,
     check_access_keys,
     generate_compliance_report,
+    check_gcp_workload_security,
 ]
 
 # Create the agent instance
