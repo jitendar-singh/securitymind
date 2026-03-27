@@ -275,6 +275,39 @@ def check_access_keys(
     return response.to_dict()
 
 
+def check_public_gcs_buckets(cloud: str, project_id: str) -> dict:
+    """
+    Check for publicly accessible GCS buckets, with caching.
+
+    Args:
+        cloud: The cloud provider to use (e.g., "gcp")
+        project_id: GCP project ID (e.g., "my-project")
+
+    Returns:
+        Dictionary with a list of public buckets and a summary.
+
+    Example:
+        >>> check_public_gcs_buckets("gcp", "my-project")
+    """
+    logger.info(f"Tool called: check_public_gcs_buckets(cloud={cloud}, project_id={project_id})")
+
+    memory = MemoryManager()
+
+    # Check cache first
+    cached_buckets = memory.get_public_gcs_buckets(project_id)
+    if cached_buckets:
+        return cached_buckets
+
+    client = _get_client(cloud)
+    response = client.list_public_gcs_buckets(project_id=project_id)
+
+    # Add to cache
+    if response.status == "success":
+        memory.add_public_gcs_buckets(project_id, response.to_dict())
+
+    return response.to_dict()
+
+
 def generate_compliance_report(cloud: str, parent: str) -> dict:
     """
     Generates a comprehensive compliance report in HTML format.
@@ -308,6 +341,10 @@ def generate_compliance_report(cloud: str, parent: str) -> dict:
         keys_result = check_access_keys(cloud, project_id)
         if keys_result.get("status") == "success":
             all_data["access_keys"] = keys_result.get("data", {})
+
+        buckets_result = check_public_gcs_buckets(cloud, project_id)
+        if buckets_result.get("status") == "success":
+            all_data["public_gcs_buckets"] = buckets_result.get("data", {})
 
     if org_id:
         org_policies_result = check_org_policies(cloud, org_id)
@@ -367,6 +404,7 @@ AGENT_TOOLS = [
     check_iam_recommendations,
     check_org_policies,
     check_access_keys,
+    check_public_gcs_buckets,
     generate_compliance_report,
     check_gcp_workload_security,
 ]
@@ -374,7 +412,7 @@ AGENT_TOOLS = [
 # Create the agent instance
 cloud_compliance_agent = Agent(
     name=build_agent_name(),
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description=build_short_description(),
     instruction=build_agent_instructions(),
     tools=AGENT_TOOLS,

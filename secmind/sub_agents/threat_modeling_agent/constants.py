@@ -42,7 +42,7 @@ RECOMMENDATION_CATEGORIES = [
 ]
 
 # Gemini model configuration
-DEFAULT_MODEL = "gemini-1.5-flash"
+DEFAULT_MODEL = "gemini-2.5-pro"
 GENERATION_TEMPERATURE = 0.5
 MAX_RETRIES = 3
 REQUEST_TIMEOUT = 30

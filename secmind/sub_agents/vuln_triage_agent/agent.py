@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 search_agent = Agent(
-    model='gemini-2.5-flash',
+    model='gemini-2.5-pro',
     name='SearchAgent',
     instruction="""
     You're a specialist in Google Search
@@ -49,7 +49,7 @@ search_agent = Agent(
 
 vuln_triage_agent = Agent(
     name="vuln_triage_agent",
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description=(
         "Triages vulnerabilities and verifies software package licenses "
         "across multiple ecosystems, with SBOM parsing support. "

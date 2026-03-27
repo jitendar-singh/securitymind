@@ -3,7 +3,7 @@ import json
 import requests
 from typing import List
 from google.adk.agents import Agent
-import google.generativeai as genai
+import google.genai as genai
 
 from pydantic import BaseModel
 
@@ -37,11 +37,9 @@ def review_code(code_snippet: str) -> dict:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return {"issues": [], "fixes": [], "overall_comments": "Google API key not set."}
-    
-    genai.configure(api_key=api_key)
-    
+                
     model = genai.GenerativeModel(
-        'gemini-2.5-flash', 
+        'gemini-2.5-pro', 
     )
     
     # Step 1: Auto-detect the language
@@ -140,7 +138,7 @@ def get_github_pr_diff(pr_url: str) -> str:
 # - Update the Agent configuration to include the new tool:
 code_review_agent = Agent(
     name="code_review_agent",
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description="Reviews code for security,code smells and best practices.And delegates to jira_agent if issues found.",
     instruction="""You are a code review agent. Your role is to review the provided code for security vulnerabilities, code smells, readability, and efficiency.
         The user can provide either a direct code snippet or a GitHub pull request URL. Your goal is to provide a thorough review and suggest necessary fixes.

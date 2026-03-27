@@ -11,6 +11,8 @@ from .models import ThreatModelResult, ThreatModelReport
 from .prompt_builder import ThreatModelPromptBuilder
 from .constants import DEFAULT_MODEL, GENERATION_TEMPERATURE, MAX_RETRIES
 from secmind.memory_manager import MemoryManager
+from .dfd_generator import DFDGenerator
+from . import report_generator
 
 logger = logging.getLogger(__name__)
 
@@ -18,34 +20,28 @@ logger = logging.getLogger(__name__)
 class ThreatModeler:
     """Handles threat modeling operations with Gemini AI."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = DEFAULT_MODEL, memory_manager: Optional[MemoryManager] = None):
+    def __init__(self, model: str = DEFAULT_MODEL, memory_manager: Optional[MemoryManager] = None):
         """
         Initialize threat modeler.
         
         Args:
-            api_key: Google API key (defaults to GOOGLE_API_KEY env var)
             model: Gemini model to use
             memory_manager: Instance of MemoryManager for caching
         """
-        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self.model_name = model
         self.prompt_builder = ThreatModelPromptBuilder()
         self.memory = memory_manager or MemoryManager()
-        
-        if not self.api_key:
-            raise ValueError("Google API key not set. Set GOOGLE_API_KEY environment variable.")
-        
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(self.model_name)
+        self.client = genai.GenerativeModel(self.model_name)
+
         logger.info(f"Initialized ThreatModeler with model: {self.model_name}")
-    
+
     def generate_threat_model(self, app_details: Dict[str, Any]) -> ThreatModelResult:
         """
         Generate a threat model report for an application, with caching.
-        
+
         Args:
             app_details: Dictionary containing application details
-            
+
         Returns:
             ThreatModelResult with status and report
         """
@@ -60,7 +56,7 @@ class ThreatModeler:
 
         try:
             logger.info("Generating threat model...")
-            
+
             # Validate input
             if not app_details:
                 return {
@@ -68,34 +64,38 @@ class ThreatModeler:
                     "message": "Application details cannot be empty.",
                     "report": None
                 }
-            
+
+            # Generate DFD
+            dfd_generator = DFDGenerator(app_details)
+            dfd = dfd_generator.generate_dfd()
+
             # Build prompt
             prompt = self.prompt_builder.build_threat_model_prompt(app_details)
             logger.debug(f"Generated prompt (length: {len(prompt)} chars)")
-            
+
             # Generate content with retries
             report_data = self._generate_with_retry(prompt)
-            
+
             if not report_data:
                 return {
                     "status": "error",
                     "message": "Failed to generate threat model after retries.",
                     "report": None
                 }
-            
+
             # Validate report structure
-            validated_report = self._validate_report(report_data)
-            
+            validated_report = self._validate_report(report_data, dfd=dfd)
+
             # Add to cache
             self.memory.add_threat_model(app_details, validated_report)
-            
+
             logger.info("Threat model generated successfully")
             return {
                 "status": "success",
                 "report": validated_report,
                 "message": None
             }
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {e}")
             return {
@@ -110,42 +110,43 @@ class ThreatModeler:
                 "message": f"Failed to generate threat model: {str(e)}",
                 "report": None
             }
-    
+
     def _generate_with_retry(self, prompt: str, retries: int = MAX_RETRIES) -> Optional[Dict[str, Any]]:
         """
         Generate content with retry logic.
-        
+
         Args:
             prompt: Prompt to send to the model
             retries: Number of retries
-            
+
         Returns:
             Parsed JSON response or None
         """
         for attempt in range(retries):
             try:
                 logger.debug(f"Generation attempt {attempt + 1}/{retries}")
-                
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        temperature=GENERATION_TEMPERATURE
-                    )
+
+                generation_config = genai.types.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=GENERATION_TEMPERATURE,
                 )
-                
+                response = self.client.generate_content(
+                    prompt,
+                    generation_config=generation_config
+                )
+
                 # Parse response
                 json_str = response.text.strip()
                 report_data = json.loads(json_str)
-                
+
                 return report_data
-                
+
             except json.JSONDecodeError as e:
                 logger.warning(f"Attempt {attempt + 1} - JSON decode error: {e}")
                 if attempt == retries - 1:
                     raise
                 continue
-                
+
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} - Error: {e}")
                 if attempt == retries - 1:
@@ -154,12 +155,13 @@ class ThreatModeler:
         
         return None
     
-    def _validate_report(self, report_data: Dict[str, Any]) -> ThreatModelReport:
+    def _validate_report(self, report_data: Dict[str, Any], dfd: Optional[str] = None) -> ThreatModelReport:
         """
         Validate and normalize report structure.
         
         Args:
             report_data: Raw report data from AI
+            dfd: Path to the DFD image file
             
         Returns:
             Validated ThreatModelReport
@@ -171,7 +173,8 @@ class ThreatModeler:
             "identified_threats": report_data.get("identified_threats", []),
             "vulnerabilities": report_data.get("vulnerabilities", []),
             "recommendations": report_data.get("recommendations", {}),
-            "compliance_notes": report_data.get("compliance_notes")
+            "compliance_notes": report_data.get("compliance_notes"),
+            "dfd": dfd
         }
         
         # Validate threats
@@ -199,7 +202,7 @@ def get_threat_modeler() -> ThreatModeler:
     return _threat_modeler
 
 
-def generate_threat_model_report(app_details: str) -> dict:
+def generate_threat_model_report(app_details: str) -> str:
     """
     Generate a threat modeling report based on application details.
     
@@ -209,7 +212,7 @@ def generate_threat_model_report(app_details: str) -> dict:
         app_details: JSON string with application details
         
     Returns:
-        Dictionary with status and report
+        A string indicating the success or failure of the report generation.
         
     Example:
         >>> details = json.dumps({
@@ -218,8 +221,8 @@ def generate_threat_model_report(app_details: str) -> dict:
         ...     "cloud_config": "EC2 + RDS"
         ... })
         >>> result = generate_threat_model_report(details)
-        >>> print(result["status"])
-        "success"
+        >>> print(result)
+        "Successfully generated threat model report: threat_model_report.html"
     """
     try:
         # Parse JSON string
@@ -231,20 +234,23 @@ def generate_threat_model_report(app_details: str) -> dict:
         # Get threat modeler and generate report
         modeler = get_threat_modeler()
         result = modeler.generate_threat_model(app_details_dict)
+
+        if result["status"] == "error":
+            return f"Failed to generate threat model: {result['message']}"
+
+        # Generate HTML report
+        html_report = report_generator.generate_html_report(result["report"])
+
+        # Save the report
+        report_path = "threat_model_report.html"
+        with open(report_path, "w") as f:
+            f.write(html_report)
         
-        return result
+        return f"Successfully generated threat model report: {report_path}"
         
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in app_details: {e}")
-        return {
-            "status": "error",
-            "message": f"Invalid JSON format: {str(e)}",
-            "report": None
-        }
+        return f"Error: Invalid JSON format: {str(e)}"
     except Exception as e:
         logger.error(f"Error in generate_threat_model_report: {e}")
-        return {
-            "status": "error",
-            "message": f"Error: {str(e)}",
-            "report": None
-        }
+        return f"Error: {str(e)}"

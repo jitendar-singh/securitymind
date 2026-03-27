@@ -30,3 +30,7 @@ pytz
 requests
 Flask
 Flask-Cors
+google-cloud-storage
+networkx
+matplotlib
+scipy

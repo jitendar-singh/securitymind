@@ -185,6 +185,14 @@ class MemoryManager:
                 timestamp DATETIME
             )
         """)
+        # Table for storing public GCS buckets
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_gcs_buckets (
+                project_id TEXT PRIMARY KEY,
+                buckets_json TEXT,
+                timestamp DATETIME
+            )
+        """)
         self.sqlite_conn.commit()
 
     def add_triage_result(self, cve_id: str, severity: str, recommendation: str, details: dict):
@@ -932,6 +940,48 @@ class MemoryManager:
             return json.loads(row['details_json'])
         
         logger.info(f"GCE instance details cache miss for key: {cache_key}")
+        return None
+
+    def add_public_gcs_buckets(self, project_id: str, buckets: dict):
+        """
+        Adds public GCS buckets to the cache.
+
+        Args:
+            project_id (str): The project ID of the query.
+            buckets (dict): The buckets to cache.
+        """
+        cursor = self.sqlite_conn.cursor()
+        timestamp = datetime.now(timezone.utc)
+
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO public_gcs_buckets (project_id, buckets_json, timestamp)
+            VALUES (?, ?, ?)
+            """,
+            (project_id, json.dumps(buckets), timestamp)
+        )
+        self.sqlite_conn.commit()
+        logger.info(f"Public GCS buckets cached for project: {project_id}")
+
+    def get_public_gcs_buckets(self, project_id: str) -> dict | None:
+        """
+        Retrieves cached public GCS buckets.
+
+        Args:
+            project_id (str): The project ID of the query.
+
+        Returns:
+            The cached buckets, or None if not found.
+        """
+        cursor = self.sqlite_conn.cursor()
+        cursor.execute("SELECT buckets_json FROM public_gcs_buckets WHERE project_id = ?", (project_id,))
+        row = cursor.fetchone()
+
+        if row:
+            logger.info(f"Public GCS buckets cache hit for project: {project_id}")
+            return json.loads(row['buckets_json'])
+
+        logger.info(f"Public GCS buckets cache miss for project: {project_id}")
         return None
 
     def search_semantic_memory(self, query_text: str, n_results: int = 2) -> list[str]:

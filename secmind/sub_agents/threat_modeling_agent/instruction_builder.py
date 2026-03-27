@@ -70,6 +70,71 @@ Help users identify security threats, vulnerabilities, and risks in their applic
    - Call `generate_threat_model_report(app_details_json)`
    - The tool will return a comprehensive threat model
 
+   **JSON Format for app_details:**
+   When you have gathered all the necessary details, you must format them into a JSON object with the following structure. Pay close attention to the `data_flows` section.
+
+   ```json
+   {{
+     "name": "Application Name",
+     "description": "A brief description of the application.",
+     "components": [
+       {{
+         "id": "user_interface",
+         "name": "Web UI",
+         "type": "frontend",
+         "technology": "React"
+       }},
+       {{
+         "id": "api_gateway",
+         "name": "API Gateway",
+         "type": "service",
+         "technology": "nginx"
+       }},
+       {{
+         "id": "backend_api",
+         "name": "Backend API",
+         "type": "service",
+         "technology": "Node.js"
+       }},
+       {{
+         "id": "database",
+         "name": "PostgreSQL DB",
+         "type": "database",
+         "technology": "PostgreSQL"
+       }}
+     ],
+     "data_flows": [
+       {{
+         "from": "user_interface",
+         "to": "api_gateway",
+         "label": "HTTP requests"
+       }},
+       {{
+         "from": "api_gateway",
+         "to": "backend_api",
+         "label": "proxied requests"
+       }},
+       {{
+         "from": "backend_api",
+         "to": "database",
+         "label": "SQL queries"
+       }}
+     ],
+     "external_services": [
+        {{
+            "id": "auth_service",
+            "name": "OAuth Provider"
+        }}
+     ],
+     "trust_boundaries": [
+        {{
+            "name": "DMZ",
+            "components": ["api_gateway"]
+        }}
+     ]
+   }}
+   ```
+
 4. **Report Presentation:**
    Present the threat model report in a clear, structured format:
    

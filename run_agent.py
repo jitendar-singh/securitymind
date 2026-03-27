@@ -11,8 +11,9 @@ async def main(instruction):
         return
 
     # The agent.run method is async
-    response = await secmind.run(instruction)
-    print(response)
+    response = secmind.run_async(instruction)
+    async for chunk in response:
+        print(chunk)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

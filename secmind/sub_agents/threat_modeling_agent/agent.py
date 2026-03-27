@@ -24,7 +24,7 @@ agent_instructions = instruction_builder.build_agent_instructions()
 # Create the Threat Modeling Agent
 threat_modeling_agent = Agent(
     name="threat_modeling_agent",
-    model="gemini-2.0-flash-exp",
+    model="gemini-2.5-pro",
     description=(
         "Expert threat modeling agent specializing in threat modeling, "
         "security architecture review, and vulnerability assessment using STRIDE methodology."
