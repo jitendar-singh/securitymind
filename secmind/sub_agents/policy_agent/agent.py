@@ -60,7 +60,7 @@ def list_policy_documents() -> dict:
 
 policy_agent = Agent(
     name="policy_agent",
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description="Reads policies from local files and answers to user questions from the policy files.",
     instruction="""
     Answer from local policies.

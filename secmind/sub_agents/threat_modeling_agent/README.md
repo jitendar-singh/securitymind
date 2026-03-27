@@ -69,7 +69,7 @@ app_sec_agent/
 
 ```bash
 pip install google-adk
-pip install google-generativeai
+pip install google-genai
 ```
 
 ## ⚙️ Configuration

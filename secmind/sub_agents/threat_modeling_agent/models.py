@@ -45,6 +45,7 @@ class ThreatModelReport(TypedDict):
     vulnerabilities: List[VulnerabilityDetails]
     recommendations: Recommendations
     compliance_notes: Optional[List[str]]
+    dfd: Optional[str]
 
 
 class ThreatModelResult(TypedDict):

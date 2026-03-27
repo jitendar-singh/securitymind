@@ -28,7 +28,7 @@ class AgentConfig:
     """Configuration for the Security Mind agent."""
     
     NAME = "secmind"
-    MODEL = "gemini-2.5-flash"
+    MODEL = "gemini-2.5-pro"
     DESCRIPTION = "Master security agent that delegates tasks."
     
     # Task priorities (lower number = higher priority)
@@ -59,7 +59,7 @@ class AgentConfig:
         "code_reviews": "code_review_agent",
         "cloud_security": "cloud_compliance_agent",
         "cloud_compliance": "cloud_compliance_agent",
-        "threat_modelling": "app_sec_agent",
+        "threat_modelling": "threat_modeling_agent",
         "application_security": "app_sec_agent",
         "policy_governance": "policy_agent",
         "jira_tickets": "jira_agent",
@@ -107,7 +107,7 @@ class InstructionBuilder:
                 - Vulnerabilities and license checks → vuln_triage_agent
                 - Code reviews → code_review_agent
                 - Cloud security posture/compliance → cloud_compliance_agent
-                - Application security review/Threat Modelling → app_sec_agent
+                - Application security review/Threat Modelling → threat_modeling_agent
                 - Policy governance questions → policy_agent
                 - Jira tickets → jira_agent
 
@@ -184,7 +184,7 @@ def create_secmind_agent(
     Create and configure the Security Mind master agent.
     
     Args:
-        model: The AI model to use (default: gemini-2.5-flash)
+        model: The AI model to use (default: gemini-2.5-pro)
         sub_agents: List of sub-agents to delegate to (optional)
         validate: Whether to validate sub-agents before creating agent
     

@@ -210,6 +210,9 @@ class GCPClient(BaseClient):
                     self._clients[client_type] = orgpolicy_v2.OrgPolicyClient()
                 elif client_type == "iam_admin":
                     self._clients[client_type] = iam_admin_v1.IAMClient()
+                elif client_type == "storage":
+                    from google.cloud import storage
+                    self._clients[client_type] = storage.Client()
                 else:
                     raise ValueError(f"Unknown client type: {client_type}")
                 
@@ -408,6 +411,7 @@ class GCPClient(BaseClient):
                                 "op": op.get("op"),
                                 "value": op.get("value"),
                                 "originalValue": op.get("originalValue"),
+                                "pathFilters": op.get("pathFilters"),
                             }
                             details["operations"].append(op_details)
                 if not details["operations"]:
@@ -534,4 +538,49 @@ class GCPClient(BaseClient):
                 "summary": f"{len(non_compliant)} keys older than {max_age_days} days"
             },
             message=f"Analyzed {len(keys)} service account keys"
+        )
+
+    # ========================================================================
+    # GCS METHODS
+    # ========================================================================
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_public_gcs_buckets(self, project_id: str) -> APIResponse:
+        """
+        List publicly accessible GCS buckets.
+
+        Args:
+            project_id: GCP project ID
+
+        Returns:
+            APIResponse with list of public buckets and summary
+        """
+        logger.info(f"Listing public GCS buckets for project: {project_id}")
+
+        storage_client = self._get_client("storage")
+        
+        public_buckets = []
+        
+        for bucket in storage_client.list_buckets(project=project_id):
+            policy = bucket.get_iam_policy(requested_policy_version=3)
+            
+            for binding in policy.bindings:
+                if "allUsers" in binding["members"] or "allAuthenticatedUsers" in binding["members"]:
+                    public_buckets.append({
+                        "name": bucket.name,
+                        "url": f"gs://{bucket.name}",
+                        "roles": binding["role"],
+                        "members": list(binding["members"]),
+                    })
+                    break  # Move to the next bucket once a public binding is found
+
+        logger.info(f"Found {len(public_buckets)} public GCS buckets")
+
+        return APIResponse.success(
+            data={
+                "public_buckets": public_buckets,
+                "summary": f"Found {len(public_buckets)} publicly accessible buckets."
+            },
+            message=f"Analyzed GCS buckets in project {project_id}"
         )

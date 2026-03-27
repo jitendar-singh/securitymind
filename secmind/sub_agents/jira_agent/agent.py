@@ -27,7 +27,7 @@ def create_jira_issue(project_key: str, summary: str, description: str, issue_ty
 
 jira_agent = Agent(
     name="jira_agent",
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description="Creates Jira issues from findings.",
     instruction="""
     Create issues using create_jira_issue with provided context.
