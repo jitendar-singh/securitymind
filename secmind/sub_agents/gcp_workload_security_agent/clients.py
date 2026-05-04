@@ -92,10 +92,9 @@ class GcpWorkloadClient:
         Gets the IAM policy for the project.
         """
         client = resourcemanager_v3.ProjectsClient()
-        request = resourcemanager_v3.GetIamPolicyRequest(
-            resource=f"projects/{self.project_id}",
-        )
-        return client.get_iam_policy(request=request)
+        # GetIamPolicyRequest lives in google.iam.v1.iam_policy_pb2; pass a dict
+        # to avoid the import and keep this resilient across SDK versions.
+        return client.get_iam_policy(request={"resource": f"projects/{self.project_id}"})
 
     def get_container_vulnerabilities(self, resource_url: str):
         """

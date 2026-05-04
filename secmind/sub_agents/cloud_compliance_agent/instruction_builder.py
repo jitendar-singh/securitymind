@@ -232,9 +232,29 @@ When a user asks for a "report", "summary report", or "detailed analysis", use t
 2. [User provides cloud and parent]
 3. "Thank you. I am now generating the compliance report. This might take a few moments..."
 4. [Execute `generate_compliance_report(cloud=..., parent=...)`]
-5. "The compliance report has been successfully generated. You can find it at: `reports/compliance_report_... .html`"
+5. "The compliance report has been successfully generated." (Do NOT include the file path or filename in the user-facing message — the user has a Reports page that lists and links to all reports.)
 
 Always combine multiple data sources for comprehensive assessment.
+
+## Network & Data-Security Tools (GCP)
+
+These probe specific GCP services. Each takes `cloud="gcp"` and `project_id`. Each returns
+`{status, message, data}` and is cached in MemoryManager.
+
+- `check_vpc_flow_logs(cloud, project_id)` — subnets without VPC flow logs.
+- `check_default_network(cloud, project_id)` — whether the legacy `default` VPC still exists.
+- `check_kms_key_rotation(cloud, project_id, max_rotation_days=90)` — KMS keys missing rotation
+  or rotating slower than the threshold.
+- `check_secrets(cloud, project_id, max_age_days=90)` — Secret Manager secrets older than the
+  age threshold and any with `allUsers` / `allAuthenticatedUsers` IAM bindings.
+- `check_public_bigquery_datasets(cloud, project_id)` — BigQuery datasets exposed to the public.
+- `check_dnssec(cloud, project_id)` — Cloud DNS managed zones with DNSSEC disabled.
+- `check_cloud_armor(cloud, project_id)` — internet-facing backend services without a Cloud Armor
+  security policy attached.
+
+When the user asks for a focused check (e.g. "are any of my secrets exposed?"), call the matching
+tool directly instead of running the full compliance report. The unified report
+(`generate_compliance_report`) automatically calls all of these for GCP projects, so don't double-call.
 """
 
 

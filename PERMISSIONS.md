@@ -12,6 +12,8 @@ We recommend creating a custom IAM role with the exact permissions needed to run
 
 The following permissions are required for the GCP service account used by Security Mind:
 
+**Cloud Compliance Agent (existing):**
+
 *   `cloudasset.assets.list` - To list cloud resources.
 *   `containeranalysis.occurrences.list` - To list vulnerability occurrences for container images.
 *   `compute.instances.list` - To list GCE instances.
@@ -21,6 +23,28 @@ The following permissions are required for the GCP service account used by Secur
 *   `securitycenter.findings.list` - To list security findings.
 *   `securitycenter.sources.list` - To list security sources.
 
+**GCP Workload Security Agent:**
+
+*   `compute.firewalls.list` - To list VPC firewall rules.
+*   `compute.zones.list` - For aggregated GCE listing.
+*   `container.clusters.list` - To list GKE clusters.
+*   `run.services.list` - To list Cloud Run services.
+*   `cloudfunctions.functions.list` - To list Cloud Functions.
+*   `resourcemanager.projects.getIamPolicy` - To read project IAM (privilege escalation analysis).
+
+**Network & Data-Security Checks (M2):**
+
+*   `compute.subnetworks.list` - To check VPC flow log status per subnet.
+*   `compute.networks.get` - To detect the legacy default VPC.
+*   `compute.securityPolicies.list` - To enumerate Cloud Armor policies.
+*   `compute.backendServices.list` - To check which backends are protected by Cloud Armor.
+*   `cloudkms.keyRings.list` - To enumerate KMS key rings.
+*   `cloudkms.cryptoKeys.list` - To check KMS key rotation policies.
+*   `secretmanager.secrets.list` - To enumerate Secret Manager secrets.
+*   `secretmanager.secrets.getIamPolicy` - To read secret IAM bindings.
+*   `bigquery.datasets.get` - To inspect BigQuery dataset access entries.
+*   `dns.managedZones.list` - To check DNSSEC status on managed zones.
+
 ### Creating a Custom IAM Role
 
 You can create a custom IAM role named `security_mind_auditor` using the following `gcloud` command. Run this command in your Cloud Shell or any environment where you have the `gcloud` CLI configured.
@@ -29,7 +53,7 @@ You can create a custom IAM role named `security_mind_auditor` using the followi
 gcloud iam roles create security_mind_auditor --project=[YOUR_PROJECT_ID] 
     --title="Security Mind Auditor" 
     --description="Read-only role for the Security Mind application" 
-    --permissions="cloudasset.assets.list,containeranalysis.occurrences.list,compute.instances.list,iam.serviceAccountKeys.list,orgpolicy.policy.get,recommender.iamPolicyRecommendations.list,securitycenter.findings.list,securitycenter.sources.list" 
+    --permissions="cloudasset.assets.list,containeranalysis.occurrences.list,compute.instances.list,iam.serviceAccountKeys.list,orgpolicy.policy.get,recommender.iamPolicyRecommendations.list,securitycenter.findings.list,securitycenter.sources.list,compute.firewalls.list,compute.zones.list,container.clusters.list,run.services.list,cloudfunctions.functions.list,resourcemanager.projects.getIamPolicy,compute.subnetworks.list,compute.networks.get,compute.securityPolicies.list,compute.backendServices.list,cloudkms.keyRings.list,cloudkms.cryptoKeys.list,secretmanager.secrets.list,secretmanager.secrets.getIamPolicy,bigquery.datasets.get,dns.managedZones.list" 
     --stage=GA
 ```
 

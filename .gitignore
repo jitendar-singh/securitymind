@@ -20,7 +20,7 @@ lerna-debug.log*
 
 node_modules
 dist
-dist-ssr
+dist-ssry
 *.local
 
 # Editor directories and files
@@ -33,3 +33,24 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# SecurityMind specific
+memory/
+memory/users/
+memory/settings/
+memory/integrations.db
+memory/.fernet_key
+memory/.jwt_secret
+
+# GitLab specific
+.gitlab/
+
+# Google OAuth specific
+.google_oauth/
+
+# Claude specific
+.claude/
+CLAUDE.md
+
+# History specific
+TODO.txt

@@ -1,6 +1,11 @@
 atlassian-python-api
+Authlib
 chromadb
 copilotkit
+bcrypt
+cryptography
+PyJWT
+litellm
 datetime
 google-adk
 google-api-python-client
@@ -10,13 +15,16 @@ google-cloud-compute
 google-cloud-container
 google-cloud-containeranalysis
 google-cloud-functions
+google-cloud-bigquery
 google-cloud-iam
+google-cloud-kms
 google-cloud-org-policy
+google-cloud-secret-manager
 google-cloud-recommender
 google-cloud-resource-manager
 google-cloud-run
 google-cloud-securitycenter
-google-generativeai
+google-genai
 langgraph
 lxml
 nvdlib
@@ -33,4 +41,5 @@ Flask-Cors
 google-cloud-storage
 networkx
 matplotlib
+pydot
 scipy

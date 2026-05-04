@@ -40,6 +40,21 @@ def generate_html_report(data: Dict[str, Any], parent: str, cloud: str) -> str:
     non_compliant_keys = access_keys.get("non_compliant", [])
     public_buckets_data = data.get("public_gcs_buckets", {})
     public_buckets = public_buckets_data.get("public_buckets", [])
+    risky_fw_rules = (data.get("risky_firewall_rules") or {}).get("issues", [])
+    priv_iam_bindings = (data.get("privileged_iam_bindings") or {}).get("issues", [])
+    container_scans = (data.get("container_scan_summary") or {}).get("images", [])
+    flow_logs = data.get("vpc_flow_logs") or {}
+    flow_logs_disabled = flow_logs.get("disabled", [])
+    default_network = data.get("default_network") or {}
+    kms_rotation = data.get("kms_rotation") or {}
+    kms_non_compliant = kms_rotation.get("non_compliant", [])
+    secrets = data.get("secrets") or {}
+    stale_secrets = secrets.get("stale", [])
+    public_secrets = secrets.get("publicly_bound", [])
+    public_bq = (data.get("public_bigquery_datasets") or {}).get("public_datasets", [])
+    dnssec_zones_disabled = (data.get("dnssec_status") or {}).get("disabled", [])
+    cloud_armor = data.get("cloud_armor_coverage") or {}
+    armor_unprotected = cloud_armor.get("internet_facing_unprotected", [])
 
     html = f"""
     <!DOCTYPE html>
@@ -151,6 +166,38 @@ def generate_html_report(data: Dict[str, Any], parent: str, cloud: str) -> str:
                     <div>Public GCS Buckets</div>
                     <div class="value">{len(public_buckets)}</div>
                 </div>
+                <div class="summary-item">
+                    <div>Risky FW Rules</div>
+                    <div class="value">{len(risky_fw_rules)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Privileged IAM Bindings</div>
+                    <div class="value">{len(priv_iam_bindings)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Subnets w/o Flow Logs</div>
+                    <div class="value">{len(flow_logs_disabled)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>KMS Keys Non-Rotating</div>
+                    <div class="value">{len(kms_non_compliant)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Stale Secrets</div>
+                    <div class="value">{len(stale_secrets)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Public BQ Datasets</div>
+                    <div class="value">{len(public_bq)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Zones w/o DNSSEC</div>
+                    <div class="value">{len(dnssec_zones_disabled)}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Unprotected Backends</div>
+                    <div class="value">{len(armor_unprotected)}</div>
+                </div>
             </div>
 
             <h2>Security Posture Findings</h2>
@@ -167,6 +214,39 @@ def generate_html_report(data: Dict[str, Any], parent: str, cloud: str) -> str:
 
             <h2>Public GCS Buckets</h2>
             {"<table><tr><th>Bucket Name</th><th>URL</th><th>Exposed Roles</th><th>Exposed Members</th></tr>" + "".join([f"<tr><td>{b['name']}</td><td>{b['url']}</td><td>{b['roles']}</td><td>{', '.join(b['members'])}</td></tr>" for b in public_buckets]) + "</table>" if public_buckets else "<p>No publicly accessible GCS buckets found.</p>"}
+
+            <h2>Risky Firewall Rules</h2>
+            {"<table><tr><th>Rule</th><th>Port</th><th>Service</th><th>Source Ranges</th><th>Recommended Action</th></tr>" + "".join([f"<tr><td>{r['name']}</td><td>{r['port']}</td><td>{r['service']}</td><td>{', '.join(r.get('source_ranges', []))}</td><td>{r['recommended_action']}</td></tr>" for r in risky_fw_rules]) + "</table>" if risky_fw_rules else "<p>No firewall rules expose sensitive ports to 0.0.0.0/0.</p>"}
+
+            <h2>Privileged IAM Bindings</h2>
+            {"<table><tr><th>Member</th><th>Role</th><th>Issue</th></tr>" + "".join([f"<tr><td>{b['member']}</td><td>{b['role']}</td><td>{b['message']}</td></tr>" for b in priv_iam_bindings]) + "</table>" if priv_iam_bindings else "<p>No overly-permissive or impersonation IAM bindings detected.</p>"}
+
+            <h2>Container Scan Summary</h2>
+            {"<table><tr><th>Image</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th></tr>" + "".join([f"<tr><td>{c['image']}</td><td>{c.get('CRITICAL', 0)}</td><td>{c.get('HIGH', 0)}</td><td>{c.get('MEDIUM', 0)}</td><td>{c.get('LOW', 0)}</td></tr>" for c in container_scans]) + "</table>" if container_scans else "<p>No container scan summary available. Use the GCP Workload Security agent's <code>scan_container_image</code> tool to populate this section.</p>"}
+
+            <h2>VPC Flow Logs Disabled</h2>
+            {"<table><tr><th>Subnet</th><th>Region</th><th>Network</th><th>Flow Sampling</th></tr>" + "".join([f"<tr><td>{s.get('name', '')}</td><td>{s.get('region', '')}</td><td>{s.get('network', '')}</td><td>{s.get('flow_sampling', 'N/A')}</td></tr>" for s in flow_logs_disabled]) + "</table>" if flow_logs_disabled else "<p>All subnets have VPC flow logs enabled.</p>"}
+
+            <h2>Default Network</h2>
+            <p>Default VPC present: <strong>{"yes" if default_network.get("present") else "no"}</strong>{f" — auto_create_subnetworks={default_network.get('auto_create_subnetworks')}, subnetworks={default_network.get('subnetwork_count')}" if default_network.get("present") else ""}.</p>
+
+            <h2>KMS Key Rotation (&gt;{kms_rotation.get('max_rotation_days', 90)} days or no rotation)</h2>
+            {"<table><tr><th>Key</th><th>Key Ring</th><th>Location</th><th>Rotation (days)</th><th>Reason</th></tr>" + "".join([f"<tr><td>{k.get('name', '')}</td><td>{k.get('key_ring', '')}</td><td>{k.get('location', '')}</td><td>{k.get('rotation_period_days') if k.get('rotation_period_days') is not None else 'N/A'}</td><td>{k.get('reason', '')}</td></tr>" for k in kms_non_compliant]) + "</table>" if kms_non_compliant else "<p>All KMS keys meet the rotation policy.</p>"}
+
+            <h2>Stale Secrets (&gt;{secrets.get('max_age_days', 90)} days)</h2>
+            {"<table><tr><th>Secret</th><th>Age (days)</th><th>Created</th></tr>" + "".join([f"<tr><td>{s.get('name', '')}</td><td>{int(s['age_days']) if s.get('age_days') is not None else 'N/A'}</td><td>{s.get('create_time', '')}</td></tr>" for s in stale_secrets]) + "</table>" if stale_secrets else "<p>No stale secrets.</p>"}
+
+            <h2>Publicly Bound Secrets</h2>
+            {"<table><tr><th>Secret</th><th>Bindings</th></tr>" + "".join([f"<tr><td>{s.get('name', '')}</td><td>{', '.join([b.get('role', '') + ' → ' + ', '.join(b.get('members', [])) for b in s.get('bindings', [])])}</td></tr>" for s in public_secrets]) + "</table>" if public_secrets else "<p>No secrets are publicly bound.</p>"}
+
+            <h2>Public BigQuery Datasets</h2>
+            {"<table><tr><th>Dataset</th><th>Location</th><th>Exposed Role</th><th>Exposed Principal</th></tr>" + "".join([f"<tr><td>{d.get('dataset_id', '')}</td><td>{d.get('location', '')}</td><td>{d.get('exposed_role', '')}</td><td>{d.get('exposed_principal', '')}</td></tr>" for d in public_bq]) + "</table>" if public_bq else "<p>No publicly accessible BigQuery datasets.</p>"}
+
+            <h2>DNSSEC Disabled Zones</h2>
+            {"<table><tr><th>Zone</th><th>DNS Name</th><th>Visibility</th><th>State</th></tr>" + "".join([f"<tr><td>{z.get('name', '')}</td><td>{z.get('dns_name', '')}</td><td>{z.get('visibility', '')}</td><td>{z.get('dnssec_state', '')}</td></tr>" for z in dnssec_zones_disabled]) + "</table>" if dnssec_zones_disabled else "<p>All managed zones have DNSSEC enabled (or none exist).</p>"}
+
+            <h2>Cloud Armor Coverage</h2>
+            {"<table><tr><th>Backend Service</th><th>Region</th><th>Scheme</th><th>Has Security Policy?</th></tr>" + "".join([f"<tr><td>{b.get('name', '')}</td><td>{b.get('region', '')}</td><td>{b.get('load_balancing_scheme', '')}</td><td>{'yes' if b.get('has_security_policy') else 'no'}</td></tr>" for b in armor_unprotected]) + "</table>" if armor_unprotected else "<p>All internet-facing backend services have a Cloud Armor security policy attached (or none exist).</p>"}
 
             <div class="footer">
                 <p>Generated by Security Mind AI</p>

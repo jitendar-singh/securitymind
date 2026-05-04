@@ -1,111 +1,167 @@
+@import "tailwindcss";
+
+/* Variant: enable .dark class on <html> for explicit toggle (alongside system preference). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---- Design tokens (light) -------------------------------------------- */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --text:        #6b6375;
+  --text-h:      #08060d;
+  --text-muted:  #9aa0a6;
+  --bg:          #fbfbfd;             /* Apple's near-white page bg */
+  --bg-elev:     #ffffff;
+  --bg-subtle:   #f4f4f7;
+  --border:      #e5e4e7;
+  --border-soft: #ececef;
+  --code-bg:     #f4f3ec;
+  --accent:      #6e44ff;             /* darkened slightly from #aa3bff for AA on white */
+  --accent-h:    #5a30e6;
+  --accent-bg:   rgba(110, 68, 255, 0.10);
+  --accent-ring: rgba(110, 68, 255, 0.45);
+  --shadow-sm:   0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 1px rgba(16, 24, 40, 0.04);
+  --shadow-md:   0 8px 24px -8px rgba(16, 24, 40, 0.18), 0 2px 6px rgba(16, 24, 40, 0.06);
+  --shadow-lg:   0 24px 48px -12px rgba(16, 24, 40, 0.22), 0 8px 16px rgba(16, 24, 40, 0.08);
+}
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/* ---- Design tokens (dark) — applied via .dark class OR system pref ---- */
+.dark,
+:root.dark {
+  --text:        #c4c7d0;
+  --text-h:      #f3f4f6;
+  --text-muted:  #7d8290;
+  --bg:          #0b0b0f;
+  --bg-elev:     #14151b;
+  --bg-subtle:   #1a1b22;
+  --border:      #2a2b34;
+  --border-soft: #20212a;
+  --code-bg:     #1f2028;
+  --accent:      #a78bfa;
+  --accent-h:    #c4b5fd;
+  --accent-bg:   rgba(167, 139, 250, 0.14);
+  --accent-ring: rgba(167, 139, 250, 0.55);
+  --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md:   0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg:   0 24px 48px -12px rgba(0, 0, 0, 0.6),  0 8px 16px rgba(0, 0, 0, 0.4);
+}
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --text:        #c4c7d0;
+    --text-h:      #f3f4f6;
+    --text-muted:  #7d8290;
+    --bg:          #0b0b0f;
+    --bg-elev:     #14151b;
+    --bg-subtle:   #1a1b22;
+    --border:      #2a2b34;
+    --border-soft: #20212a;
+    --code-bg:     #1f2028;
+    --accent:      #a78bfa;
+    --accent-h:    #c4b5fd;
+    --accent-bg:   rgba(167, 139, 250, 0.14);
+    --accent-ring: rgba(167, 139, 250, 0.55);
+    --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-md:   0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+    --shadow-lg:   0 24px 48px -12px rgba(0, 0, 0, 0.6),  0 8px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* ---- Tailwind v4 theme bridge (use tokens via Tailwind utilities) ---- */
+@theme inline {
+  --color-text:        var(--text);
+  --color-text-h:      var(--text-h);
+  --color-text-muted:  var(--text-muted);
+  --color-bg:          var(--bg);
+  --color-bg-elev:     var(--bg-elev);
+  --color-bg-subtle:   var(--bg-subtle);
+  --color-border-app:  var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-accent:      var(--accent);
+  --color-accent-h:    var(--accent-h);
+
+  --font-sans: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont,
+               "Helvetica Neue", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont,
+                  "Helvetica Neue", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+}
+
+/* ---- Base typography (Apple-flavored) -------------------------------- */
+html, body {
+  margin: 0;
   background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans, "SF Pro Text", -apple-system, system-ui, sans-serif);
+  font-size: 17px;
+  line-height: 1.47;
+  letter-spacing: -0.011em;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
-  margin: 0;
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
+h1, h2, h3, h4 {
+  font-family: "SF Pro Display", -apple-system, system-ui, sans-serif;
   color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
+  font-weight: 600;
+  letter-spacing: -0.022em;
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
+.hero {
+  font-size: clamp(2.5rem, 5vw, 4.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+p { margin: 0; }
+
+code {
+  font-family: var(--font-mono);
+  background: var(--code-bg);
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.4rem;
+  font-size: 0.9em;
   color: var(--text-h);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
+pre {
   background: var(--code-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.625rem;
+  padding: 0.875rem 1rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.55;
 }
+pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* ---- Focus ring (Apple-ish: solid double-pixel halo) ----------------- */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-ring);
+  border-radius: inherit;
+}
+
+/* ---- Scrollbar polish ------------------------------------------------- */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: content-box; border: 2px solid transparent; }
+
+/* ---- Selection ------------------------------------------------------- */
+::selection { background: var(--accent-bg); color: var(--text-h); }

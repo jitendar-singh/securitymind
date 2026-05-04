@@ -6,6 +6,8 @@ It uses a modular architecture with separated concerns for better maintainabilit
 """
 
 import logging
+import re
+from datetime import datetime
 from typing import Optional
 import os
 
@@ -23,13 +25,8 @@ from .clients.base import BaseClient
 from .clients.azure import AzureClient
 from .clients.aws import AWSClient
 from .clients.gcp import GCPClient
-from secmind.memory_manager import MemoryManager
+from secmind.memory import get_memory_manager
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +35,39 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # These functions are exposed as tools to the agent. They provide a clean
 # interface between the agent and the GCP client.
+
+SUPPORTED_CLOUDS = {"gcp", "aws", "azure"}
+_PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+_ORG_ID_RE = re.compile(r"^[0-9]{1,19}$")
+
+
+def validate_project_id(project_id: str) -> bool:
+    return bool(_PROJECT_ID_RE.match(project_id))
+
+
+def validate_organization_id(org_id: str) -> bool:
+    return bool(_ORG_ID_RE.match(org_id))
+
+
+def _validate_cloud(cloud: str) -> Optional[dict]:
+    if cloud not in SUPPORTED_CLOUDS:
+        return {"status": "error", "message": f"Unsupported cloud provider '{cloud}'. Must be one of: {sorted(SUPPORTED_CLOUDS)}"}
+    return None
+
+
+def _validate_scope(scope: str) -> Optional[dict]:
+    if scope.startswith("projects/"):
+        project_id = scope.split("/", 1)[1]
+        if not validate_project_id(project_id):
+            return {"status": "error", "message": f"Invalid project ID in scope: '{project_id}'"}
+    elif scope.startswith("organizations/"):
+        org_id = scope.split("/", 1)[1]
+        if not validate_organization_id(org_id):
+            return {"status": "error", "message": f"Invalid organization ID in scope: '{org_id}'"}
+    else:
+        return {"status": "error", "message": f"Invalid scope '{scope}'. Must start with 'projects/' or 'organizations/'"}
+    return None
+
 
 # Global client instances (initialized lazily)
 _clients: dict[str, BaseClient] = {}
@@ -82,8 +112,13 @@ def list_resources(
         >>> list_resources("gcp", "projects/my-project", ["compute.googleapis.com/Instance"])
     """
     logger.info(f"Tool called: list_resources(cloud={cloud}, scope={scope}, resource_types={resource_types})")
-    
-    memory = MemoryManager()
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if (err := _validate_scope(scope)):
+        return err
+
+    memory = get_memory_manager()
     
     # Check cache first
     cached_resources = memory.get_cloud_resources(scope, resource_types)
@@ -116,7 +151,12 @@ def list_security_sources(cloud: str, parent: str) -> dict:
         >>> list_security_sources("gcp", "projects/my-project")
     """
     logger.info(f"Tool called: list_security_sources(cloud={cloud}, parent={parent})")
-    
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if (err := _validate_scope(parent)):
+        return err
+
     client = _get_client(cloud)
     response = client.list_security_sources(parent=parent)
     
@@ -144,9 +184,14 @@ def check_security_posture(
         >>> check_security_posture("gcp", "organizations/123", source_id="specific-source-id")
     """
     logger.info(f"Tool called: check_security_posture(cloud={cloud}, parent={parent}, source_id={source_id})")
-    
-    memory = MemoryManager()
-    
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if (err := _validate_scope(parent)):
+        return err
+
+    memory = get_memory_manager()
+
     # Check cache first
     cached_posture = memory.get_security_posture(parent, source_id)
     if cached_posture:
@@ -181,9 +226,14 @@ def check_iam_recommendations(cloud: str, project_id: str) -> dict:
         >>> check_iam_recommendations("gcp", "my-project")
     """
     logger.info(f"Tool called: check_iam_recommendations(cloud={cloud}, project_id={project_id})")
-    
-    memory = MemoryManager()
-    
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+
     # Check cache first
     cached_recommendations = memory.get_iam_recommendations(project_id)
     if cached_recommendations:
@@ -214,9 +264,14 @@ def check_org_policies(cloud: str, organization_id: str) -> dict:
         >>> check_org_policies("gcp", "123456789")
     """
     logger.info(f"Tool called: check_org_policies(cloud={cloud}, organization_id={organization_id})")
-    
-    memory = MemoryManager()
-    
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_organization_id(organization_id):
+        return {"status": "error", "message": f"Invalid organization ID: '{organization_id}'. Must be numeric (1–19 digits)"}
+
+    memory = get_memory_manager()
+
     # Check cache first
     cached_policies = memory.get_org_policies(organization_id)
     if cached_policies:
@@ -254,9 +309,16 @@ def check_access_keys(
         >>> check_access_keys("gcp", "my-project", max_age_days=30)
     """
     logger.info(f"Tool called: check_access_keys(cloud={cloud}, project_id={project_id}, max_age_days={max_age_days})")
-    
-    memory = MemoryManager()
-    
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+    if not isinstance(max_age_days, int) or max_age_days <= 0:
+        return {"status": "error", "message": f"max_age_days must be a positive integer, got: {max_age_days!r}"}
+
+    memory = get_memory_manager()
+
     # Check cache first
     cached_keys = memory.get_access_keys(project_id, max_age_days)
     if cached_keys:
@@ -291,7 +353,12 @@ def check_public_gcs_buckets(cloud: str, project_id: str) -> dict:
     """
     logger.info(f"Tool called: check_public_gcs_buckets(cloud={cloud}, project_id={project_id})")
 
-    memory = MemoryManager()
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
 
     # Check cache first
     cached_buckets = memory.get_public_gcs_buckets(project_id)
@@ -308,6 +375,160 @@ def check_public_gcs_buckets(cloud: str, project_id: str) -> dict:
     return response.to_dict()
 
 
+# ============================================================================
+# NETWORK & DATA-SECURITY TOOLS (M2)
+# ============================================================================
+
+
+def check_vpc_flow_logs(cloud: str, project_id: str) -> dict:
+    """Report which subnets in the project have VPC flow logs disabled.
+
+    Args:
+        cloud: Cloud provider (only "gcp" is supported here).
+        project_id: GCP project ID.
+    """
+    logger.info(f"Tool called: check_vpc_flow_logs(cloud={cloud}, project_id={project_id})")
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_vpc_flow_logs(project_id)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).list_subnetworks_flow_log_status(project_id=project_id)
+    if response.status == "success":
+        memory.add_vpc_flow_logs(project_id, response.data)
+    return response.to_dict()
+
+
+def check_default_network(cloud: str, project_id: str) -> dict:
+    """Detect whether the project still has the GCP default VPC network."""
+    logger.info(f"Tool called: check_default_network(cloud={cloud}, project_id={project_id})")
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_default_network(project_id)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).get_default_network(project_id=project_id)
+    if response.status == "success":
+        memory.add_default_network(project_id, response.data)
+    return response.to_dict()
+
+
+def check_kms_key_rotation(cloud: str, project_id: str, max_rotation_days: int = 90) -> dict:
+    """Find Cloud KMS keys that have no rotation period set or rotate slower than max_rotation_days."""
+    logger.info(
+        f"Tool called: check_kms_key_rotation(cloud={cloud}, project_id={project_id}, "
+        f"max_rotation_days={max_rotation_days})"
+    )
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_kms_rotation(project_id, max_rotation_days)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).list_kms_key_rotation_issues(
+        project_id=project_id, max_rotation_days=max_rotation_days
+    )
+    if response.status == "success":
+        memory.add_kms_rotation(project_id, max_rotation_days, response.data)
+    return response.to_dict()
+
+
+def check_secrets(cloud: str, project_id: str, max_age_days: int = 90) -> dict:
+    """List Secret Manager secrets, flagging stale ones (>max_age_days) and any with public bindings."""
+    logger.info(
+        f"Tool called: check_secrets(cloud={cloud}, project_id={project_id}, max_age_days={max_age_days})"
+    )
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_secrets(project_id, max_age_days)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).list_secret_manager_secrets(
+        project_id=project_id, max_age_days=max_age_days
+    )
+    if response.status == "success":
+        memory.add_secrets(project_id, max_age_days, response.data)
+    return response.to_dict()
+
+
+def check_public_bigquery_datasets(cloud: str, project_id: str) -> dict:
+    """Find BigQuery datasets exposed to allUsers or allAuthenticatedUsers."""
+    logger.info(
+        f"Tool called: check_public_bigquery_datasets(cloud={cloud}, project_id={project_id})"
+    )
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_public_bq_datasets(project_id)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).list_public_bigquery_datasets(project_id=project_id)
+    if response.status == "success":
+        memory.add_public_bq_datasets(project_id, response.data)
+    return response.to_dict()
+
+
+def check_dnssec(cloud: str, project_id: str) -> dict:
+    """Report Cloud DNS managed zones with DNSSEC disabled."""
+    logger.info(f"Tool called: check_dnssec(cloud={cloud}, project_id={project_id})")
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_dnssec(project_id)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).list_dnssec_status(project_id=project_id)
+    if response.status == "success":
+        memory.add_dnssec(project_id, response.data)
+    return response.to_dict()
+
+
+def check_cloud_armor(cloud: str, project_id: str) -> dict:
+    """Enumerate Cloud Armor policies and flag internet-facing backends without one."""
+    logger.info(f"Tool called: check_cloud_armor(cloud={cloud}, project_id={project_id})")
+    if (err := _validate_cloud(cloud)):
+        return err
+    if not validate_project_id(project_id):
+        return {"status": "error", "message": f"Invalid project ID: '{project_id}'"}
+
+    memory = get_memory_manager()
+    cached = memory.get_cloud_armor(project_id)
+    if cached:
+        return {"status": "success", "data": cached, "message": "(cached)"}
+
+    response = _get_client(cloud).list_cloud_armor_coverage(project_id=project_id)
+    if response.status == "success":
+        memory.add_cloud_armor(project_id, response.data)
+    return response.to_dict()
+
+
 def generate_compliance_report(cloud: str, parent: str) -> dict:
     """
     Generates a comprehensive compliance report in HTML format.
@@ -320,6 +541,12 @@ def generate_compliance_report(cloud: str, parent: str) -> dict:
         A dictionary with the status and path to the generated report.
     """
     logger.info(f"Generating compliance report for {parent}")
+
+    if (err := _validate_cloud(cloud)):
+        return err
+    if (err := _validate_scope(parent)):
+        return err
+
     all_data = {}
 
     # Determine if parent is a project or organization
@@ -351,52 +578,61 @@ def generate_compliance_report(cloud: str, parent: str) -> dict:
         if org_policies_result.get("status") == "success":
             all_data["org_policies"] = org_policies_result.get("data", [])
 
+    # Workload security analyses are owned by gcp_workload_security_agent but
+    # exposed as plain functions in checks.py for programmatic aggregation here.
+    if project_id and cloud == "gcp":
+        from secmind.sub_agents.gcp_workload_security_agent import checks as workload_checks
+        fw_analysis = workload_checks.analyze_firewall_rules(project_id)
+        if fw_analysis.get("status") == "success":
+            all_data["risky_firewall_rules"] = fw_analysis.get("data", {})
+        iam_priv = workload_checks.analyze_iam_privilege_escalation(project_id)
+        if iam_priv.get("status") == "success":
+            all_data["privileged_iam_bindings"] = iam_priv.get("data", {})
+
+        # Network & data-security checks
+        for key, fn in [
+            ("vpc_flow_logs", check_vpc_flow_logs),
+            ("default_network", check_default_network),
+            ("kms_rotation", check_kms_key_rotation),
+            ("secrets", check_secrets),
+            ("public_bigquery_datasets", check_public_bigquery_datasets),
+            ("dnssec_status", check_dnssec),
+            ("cloud_armor_coverage", check_cloud_armor),
+        ]:
+            res = fn(cloud, project_id)
+            if res.get("status") == "success":
+                all_data[key] = res.get("data", {})
+
     # Generate HTML report
     try:
         html_content = generate_html_report(all_data, parent, cloud)
-        report_filename = f"compliance_report_{parent.replace('/', '_')}.html"
-        
-        # Ensure the reports directory exists
-        reports_dir = "reports"
-        if not os.path.exists(reports_dir):
-            os.makedirs(reports_dir)
-            
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        report_filename = f"compliance_report_{parent.replace('/', '_')}-{ts}.html"
+        reports_dir = os.path.abspath(os.environ.get("REPORTS_DIR", "reports"))
+        os.makedirs(reports_dir, exist_ok=True)
         report_path = os.path.join(reports_dir, report_filename)
         
         with open(report_path, "w") as f:
             f.write(html_content)
-            
+
         logger.info(f"Compliance report saved to {report_path}")
-        return {"status": "success", "report_path": report_path}
+        # Intentionally do NOT return the report_path — the user-facing message
+        # should not include the filesystem path. The Reports page lists all
+        # generated reports for the user.
+        return {"status": "success", "message": "The compliance report has been successfully generated."}
     except Exception as e:
         logger.error(f"Failed to generate HTML report: {e}")
         return {"status": "error", "message": f"Failed to generate report: {str(e)}"}
-
-
-from ..gcp_workload_security_agent.agent import GcpWorkloadSecurityAgent
-
-
-def check_gcp_workload_security(instruction: str) -> dict:
-    """
-    Checks the security of GCP workloads.
-
-    Args:
-        instruction: The instruction for the GCP Workload Security Agent.
-
-    Returns:
-        A dictionary with the security check results.
-    """
-    logger.info(f"Tool called: check_gcp_workload_security(instruction='{instruction}')")
-    workload_agent = GcpWorkloadSecurityAgent()
-    response = workload_agent.run(instruction)
-    return response.dict()
 
 
 # ============================================================================
 # AGENT DEFINITION
 # ============================================================================
 
-# Define the tools available to the agent
+# Define the tools available to the agent. Workload-security tools live on the
+# peer gcp_workload_security_agent — the master agent routes those queries
+# directly. The shared analysis functions are imported from that module's
+# checks.py inside generate_compliance_report below.
 AGENT_TOOLS = [
     list_resources,
     list_security_sources,
@@ -405,8 +641,14 @@ AGENT_TOOLS = [
     check_org_policies,
     check_access_keys,
     check_public_gcs_buckets,
+    check_vpc_flow_logs,
+    check_default_network,
+    check_kms_key_rotation,
+    check_secrets,
+    check_public_bigquery_datasets,
+    check_dnssec,
+    check_cloud_armor,
     generate_compliance_report,
-    check_gcp_workload_security,
 ]
 
 # Create the agent instance
@@ -417,40 +659,6 @@ cloud_compliance_agent = Agent(
     instruction=build_agent_instructions(),
     tools=AGENT_TOOLS,
 )
-
-
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
-
-def validate_project_id(project_id: str) -> bool:
-    """
-    Validate project ID format.
-    
-    Args:
-        project_id: Project ID to validate
-    
-    Returns:
-        True if valid, False otherwise
-    """
-    import re
-    pattern = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
-    return bool(pattern.match(project_id))
-
-
-def validate_organization_id(org_id: str) -> bool:
-    """
-    Validate organization ID format.
-    
-    Args:
-        org_id: Organization ID to validate
-    
-    Returns:
-        True if valid, False otherwise
-    """
-    import re
-    pattern = re.compile(r"^[0-9]{1,19}$")
-    return bool(pattern.match(org_id))
 
 
 # ============================================================================

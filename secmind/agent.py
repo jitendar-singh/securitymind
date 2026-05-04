@@ -14,6 +14,8 @@ from .sub_agents.policy_agent.agent import policy_agent
 from .sub_agents.vuln_triage_agent.agent import vuln_triage_agent
 from .sub_agents.code_review_agent.agent import code_review_agent
 from .sub_agents.cloud_compliance_agent.agent import cloud_compliance_agent
+from .sub_agents.gcp_workload_security_agent import gcp_workload_security_agent
+from .sub_agents.endpoint_security_agent import endpoint_security_agent
 from .sub_agents.jira_agent.agent import jira_agent
 from .sub_agents.threat_modeling_agent import threat_modeling_agent
 
@@ -22,6 +24,15 @@ load_dotenv()
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+class SecMindAgent(Agent):
+    """Thin subclass of ``google.adk.agents.Agent`` whose ``__module__`` lives
+    in ``secmind/``. ADK's Runner infers an "implied app_name" from
+    ``inspect.getmodule(root_agent.__class__).__file__``'s parent directory;
+    using the bare ``Agent`` class makes that resolve to the ADK
+    site-packages ``agents/`` directory, which trips a spurious app-name
+    mismatch warning. Subclassing here points the heuristic at this file."""
 
 
 class AgentConfig:
@@ -38,20 +49,24 @@ class AgentConfig:
         "policy_reviews": 2,
         "code_reviews": 3,
         "cloud_compliance": 4,
+        "gcp_workload_security": 4,
+        "endpoint_security": 4,
         "application_security": 5,
         "jira_tickets": 6,
     }
-    
+
     # Agent capabilities for user-facing information
     CAPABILITIES = [
         "Vulnerability triage and assessment",
         "Code reviews and license checks",
         "Cloud compliance checks",
-        "Threat Modelling as per STRIDE",
+        "GCP workload security (GCE/GKE/Cloud Run/Cloud Functions, firewall analysis, IAM privilege escalation, container scans)",
+        "Endpoint security (CrowdStrike Falcon EDR, Qualys vulnerability management)",
+        "Threat Modelling across STRIDE, MITRE ATLAS, OWASP Top 10 for LLM, LINDDUN, and MITRE ATT&CK",
         "Policy interpretation",
         "Jira ticket creation",
     ]
-    
+
     # Delegation mappings
     DELEGATION_MAP: Dict[str, str] = {
         "vulnerabilities": "vuln_triage_agent",
@@ -59,6 +74,13 @@ class AgentConfig:
         "code_reviews": "code_review_agent",
         "cloud_security": "cloud_compliance_agent",
         "cloud_compliance": "cloud_compliance_agent",
+        "gcp_workload_security": "gcp_workload_security_agent",
+        "firewall_analysis": "gcp_workload_security_agent",
+        "container_scan": "gcp_workload_security_agent",
+        "endpoint_security": "endpoint_security_agent",
+        "edr": "endpoint_security_agent",
+        "crowdstrike": "endpoint_security_agent",
+        "qualys": "endpoint_security_agent",
         "threat_modelling": "threat_modeling_agent",
         "application_security": "app_sec_agent",
         "policy_governance": "policy_agent",
@@ -107,7 +129,9 @@ class InstructionBuilder:
                 - Vulnerabilities and license checks → vuln_triage_agent
                 - Code reviews → code_review_agent
                 - Cloud security posture/compliance → cloud_compliance_agent
-                - Application security review/Threat Modelling → threat_modeling_agent
+                - GCP workload security (GCE/GKE/Cloud Run/Cloud Functions, firewall rule analysis, IAM privilege-escalation, container vuln scans) → gcp_workload_security_agent
+                - Endpoint security & vulnerability management (CrowdStrike Falcon detections/incidents/hosts, Qualys host vulnerability scans) → endpoint_security_agent
+                - Application security review / Threat Modelling (STRIDE, MITRE ATLAS for AI/ML, OWASP Top 10 for LLM, LINDDUN privacy, MITRE ATT&CK) → threat_modeling_agent
                 - Policy governance questions → policy_agent
                 - Jira tickets → jira_agent
 
@@ -125,16 +149,23 @@ class InstructionBuilder:
     @staticmethod
     def build_capability_response() -> str:
         """Build the capability description for user queries."""
-        capabilities_list = "".join(f"- {cap}" for cap in AgentConfig.CAPABILITIES)
-        
-        return f"""When asked about your purpose or capabilities, respond with the below in bullet points:
-
-                    I am Security Mind, an AI-powered Security Posture Management platform designed to enhance your organization's security throughout the software development lifecycle. By leveraging multi-agent AI architecture, I assess, monitor, and optimize your security posture—identifying vulnerabilities, ensuring compliance, and help with automating remediation workflows.
-
-                    I can help you with the following tasks, always via delegation to the appropriate sub-agent:
-                    {capabilities_list}
-
-                    Your role is to delegate tasks to specialized agents for more efficient handling."""
+        return (
+            "When asked about your purpose or capabilities (e.g. \"hi\", \"what can you do\", "
+            "\"who are you\"), respond with EXACTLY the following markdown — no preamble, "
+            "no extra prose, no other content:\n\n"
+            "**Security Mind** — an AI-powered Security Posture Management platform. "
+            "I orchestrate specialized sub-agents; I do not answer directly, I delegate.\n\n"
+            "**Sub-agents I route to:**\n"
+            "- **Vulnerability Triage Agent** — CVE triage, vulnerability assessment, license checks\n"
+            "- **Code Review Agent** — code review for security smells and risky patterns\n"
+            "- **Cloud Compliance Agent** — cloud posture & compliance for GCP, AWS, Azure\n"
+            "- **GCP Workload Security Agent** — GCE/GKE/Cloud Run/Cloud Functions inventory, firewall risk analysis, IAM privilege-escalation, container image scans\n"
+            "- **Endpoint Security Agent** — CrowdStrike Falcon (hosts, detections, incidents) and Qualys (asset vulnerability findings)\n"
+            "- **Threat Modeling Agent** — threat models using STRIDE, MITRE ATLAS, OWASP LLM Top 10, LINDDUN, MITRE ATT&CK\n"
+            "- **Policy Agent** — security policy interpretation and governance\n"
+            "- **Jira Agent** — creates Jira tickets for findings\n\n"
+            "Tell me what you need and I'll route it to the right sub-agent."
+        )
     
     @classmethod
     def build_full_instruction(cls) -> str:
@@ -158,12 +189,14 @@ def validate_sub_agents(sub_agents: List[Agent]) -> bool:
         True if all required agents are present, False otherwise
     """
     required_agents = {
-        'policy_agent', 
-        'vuln_triage_agent', 
+        'policy_agent',
+        'vuln_triage_agent',
         'code_review_agent',
         'cloud_compliance_agent',
+        'gcp_workload_security_agent',
+        'endpoint_security_agent',
         'jira_agent',
-        'threat_modeling_agent'
+        'threat_modeling_agent',
     }
     agent_names = {agent.name for agent in sub_agents}
     
@@ -201,6 +234,8 @@ def create_secmind_agent(
             code_review_agent,
             jira_agent,
             cloud_compliance_agent,
+            gcp_workload_security_agent,
+            endpoint_security_agent,
             threat_modeling_agent,
         ]
     
@@ -209,7 +244,7 @@ def create_secmind_agent(
     
     logger.info(f"Creating {AgentConfig.NAME} agent with model {model}")
     
-    return Agent(
+    return SecMindAgent(
         name=AgentConfig.NAME,
         model=model,
         description=AgentConfig.DESCRIPTION,

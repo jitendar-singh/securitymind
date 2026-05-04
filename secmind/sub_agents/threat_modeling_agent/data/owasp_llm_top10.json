@@ -1,0 +1,57 @@
+{
+  "framework": "OWASP Top 10 for LLM Applications",
+  "version": "2025",
+  "url": "https://genai.owasp.org/llm-top-10/",
+  "categories": [
+    {
+      "id": "LLM01:2025",
+      "name": "Prompt Injection",
+      "description": "Adversary-controlled input that alters LLM behavior, bypasses safety controls, or coerces the model into unintended actions. Includes direct (user) and indirect (retrieved content, tool output) injection."
+    },
+    {
+      "id": "LLM02:2025",
+      "name": "Sensitive Information Disclosure",
+      "description": "LLM outputs leak PII, credentials, proprietary data, or system internals — via memorization of training data, retrieval of sensitive context, or leaky responses."
+    },
+    {
+      "id": "LLM03:2025",
+      "name": "Supply Chain",
+      "description": "Compromise via untrusted models, datasets, embeddings, plugins, or third-party fine-tunes. Includes typosquatted models on public hubs and tampered weights."
+    },
+    {
+      "id": "LLM04:2025",
+      "name": "Data and Model Poisoning",
+      "description": "Manipulation of pre-training, fine-tuning, or RAG data to introduce backdoors, biases, or vulnerabilities that surface at inference time."
+    },
+    {
+      "id": "LLM05:2025",
+      "name": "Improper Output Handling",
+      "description": "Insufficient validation of LLM outputs before they cross trust boundaries — leading to XSS, SSRF, SQLi, RCE when output is fed to browsers, shells, DBs, or downstream services."
+    },
+    {
+      "id": "LLM06:2025",
+      "name": "Excessive Agency",
+      "description": "LLM-driven systems with overbroad permissions, autonomy, or tool access. Includes too many tools, overly permissive functions, or autonomous actions without human gating."
+    },
+    {
+      "id": "LLM07:2025",
+      "name": "System Prompt Leakage",
+      "description": "Disclosure of system prompts revealing internal instructions, secrets, role boundaries, or business logic an attacker can exploit."
+    },
+    {
+      "id": "LLM08:2025",
+      "name": "Vector and Embedding Weaknesses",
+      "description": "Risks in RAG pipelines: embedding inversion, cross-tenant data leakage in shared vector stores, retrieval poisoning, and access-control bypass via embeddings."
+    },
+    {
+      "id": "LLM09:2025",
+      "name": "Misinformation",
+      "description": "Hallucinated or fabricated outputs presented as factual — including fake citations, wrong code, and confident-but-wrong reasoning that drives downstream decisions."
+    },
+    {
+      "id": "LLM10:2025",
+      "name": "Unbounded Consumption",
+      "description": "Resource exhaustion attacks: token-flooding, model DoS, cost amplification (wallet drain), and runaway agentic loops."
+    }
+  ]
+}

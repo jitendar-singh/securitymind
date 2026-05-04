@@ -20,6 +20,7 @@ from google.cloud import securitycenter_v1
 from google.cloud import recommender_v1
 from google.cloud import orgpolicy_v2
 from google.cloud import iam_admin_v1
+from google.cloud import compute_v1
 from google.api_core import exceptions as gcp_exceptions
 from google.api_core import retry
 from google.protobuf.json_format import MessageToDict
@@ -213,6 +214,23 @@ class GCPClient(BaseClient):
                 elif client_type == "storage":
                     from google.cloud import storage
                     self._clients[client_type] = storage.Client()
+                elif client_type == "compute_subnetworks":
+                    self._clients[client_type] = compute_v1.SubnetworksClient()
+                elif client_type == "compute_networks":
+                    self._clients[client_type] = compute_v1.NetworksClient()
+                elif client_type == "compute_security_policies":
+                    self._clients[client_type] = compute_v1.SecurityPoliciesClient()
+                elif client_type == "compute_backend_services":
+                    self._clients[client_type] = compute_v1.BackendServicesClient()
+                elif client_type == "kms":
+                    from google.cloud import kms_v1
+                    self._clients[client_type] = kms_v1.KeyManagementServiceClient()
+                elif client_type == "secret_manager":
+                    from google.cloud import secretmanager_v1
+                    self._clients[client_type] = secretmanager_v1.SecretManagerServiceClient()
+                elif client_type == "dns":
+                    # Use discovery — no first-class google-cloud-dns Python client.
+                    self._clients[client_type] = build("dns", "v1", cache_discovery=False)
                 else:
                     raise ValueError(f"Unknown client type: {client_type}")
                 
@@ -583,4 +601,273 @@ class GCPClient(BaseClient):
                 "summary": f"Found {len(public_buckets)} publicly accessible buckets."
             },
             message=f"Analyzed GCS buckets in project {project_id}"
+        )
+
+    # ========================================================================
+    # NETWORK & DATA-SECURITY METHODS (M2)
+    # ========================================================================
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_subnetworks_flow_log_status(self, project_id: str) -> APIResponse:
+        """Enumerate subnets in the project and report which have VPC flow logs disabled."""
+        logger.info(f"Listing subnetwork flow log status for project: {project_id}")
+        client = self._get_client("compute_subnetworks")
+        subnets, disabled = [], []
+        for region, response in client.aggregated_list(project=project_id):
+            for s in (response.subnetworks or []):
+                row = {
+                    "name": s.name,
+                    "region": region.replace("regions/", ""),
+                    "network": s.network.split("/")[-1] if s.network else None,
+                    "enable_flow_logs": bool(getattr(s, "enable_flow_logs", False)),
+                    "flow_sampling": getattr(s.log_config, "flow_sampling", None) if getattr(s, "log_config", None) else None,
+                    "aggregation_interval": (
+                        getattr(s.log_config, "aggregation_interval", None).name
+                        if getattr(s, "log_config", None) and getattr(s.log_config, "aggregation_interval", None)
+                        else None
+                    ),
+                }
+                subnets.append(row)
+                if not row["enable_flow_logs"]:
+                    disabled.append(row)
+        summary = f"{len(disabled)} of {len(subnets)} subnets have VPC flow logs disabled."
+        return APIResponse.success(
+            data={"subnets": subnets, "disabled": disabled, "summary": summary},
+            message=summary,
+        )
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def get_default_network(self, project_id: str) -> APIResponse:
+        """Detect whether the project still has the default VPC network."""
+        logger.info(f"Checking default network presence for project: {project_id}")
+        client = self._get_client("compute_networks")
+        try:
+            net = client.get(project=project_id, network="default")
+        except gcp_exceptions.NotFound:
+            return APIResponse.success(
+                data={"present": False, "auto_create_subnetworks": False, "subnetwork_count": 0},
+                message="Default VPC absent (good).",
+            )
+        return APIResponse.success(
+            data={
+                "present": True,
+                "auto_create_subnetworks": bool(getattr(net, "auto_create_subnetworks", False)),
+                "subnetwork_count": len(list(net.subnetworks or [])),
+            },
+            message="Default VPC is present in the project.",
+        )
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_kms_key_rotation_issues(
+        self, project_id: str, max_rotation_days: int = 90
+    ) -> APIResponse:
+        """Find KMS keys without a rotation period or with rotation > max_rotation_days."""
+        logger.info(
+            f"Checking KMS key rotation for project: {project_id} (max {max_rotation_days}d)"
+        )
+        client = self._get_client("kms")
+        keys, non_compliant = [], []
+        rings = client.list_key_rings(parent=f"projects/{project_id}/locations/-")
+        for ring in rings:
+            for k in client.list_crypto_keys(parent=ring.name):
+                rotation_days: Optional[float] = None
+                if getattr(k, "rotation_period", None):
+                    rotation_days = k.rotation_period.total_seconds() / 86400.0
+                next_rotation = (
+                    k.next_rotation_time.isoformat() if getattr(k, "next_rotation_time", None) else None
+                )
+                compliant = (
+                    rotation_days is not None and rotation_days <= max_rotation_days
+                )
+                reason = (
+                    None
+                    if compliant
+                    else (
+                        "no rotation period set"
+                        if rotation_days is None
+                        else f"rotation period {rotation_days:.0f} days exceeds {max_rotation_days}-day threshold"
+                    )
+                )
+                row = {
+                    "name": k.name.split("/")[-1],
+                    "key_ring": ring.name.split("/")[-1],
+                    "location": ring.name.split("/")[-3],
+                    "purpose": k.purpose.name if hasattr(k.purpose, "name") else str(k.purpose),
+                    "rotation_period_days": rotation_days,
+                    "next_rotation_time": next_rotation,
+                    "compliant": compliant,
+                    "reason": reason,
+                }
+                keys.append(row)
+                if not compliant:
+                    non_compliant.append(row)
+        return APIResponse.success(
+            data={"keys": keys, "non_compliant": non_compliant, "max_rotation_days": max_rotation_days},
+            message=f"{len(non_compliant)} of {len(keys)} KMS keys are out of rotation policy.",
+        )
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_secret_manager_secrets(
+        self, project_id: str, max_age_days: int = 90
+    ) -> APIResponse:
+        """List Secret Manager secrets, flagging stale ones and any with public bindings."""
+        logger.info(
+            f"Listing Secret Manager secrets for project: {project_id} (max age {max_age_days}d)"
+        )
+        client = self._get_client("secret_manager")
+        now = datetime.now(timezone.utc)
+        secrets, stale, publicly_bound = [], [], []
+        parent = f"projects/{project_id}"
+        for s in client.list_secrets(request={"parent": parent}):
+            create_time = s.create_time
+            age_days = (now - create_time).total_seconds() / 86400.0 if create_time else None
+            try:
+                policy = client.get_iam_policy(request={"resource": s.name})
+                bindings = [
+                    {"role": b.role, "members": list(b.members)} for b in policy.bindings
+                ]
+            except gcp_exceptions.PermissionDenied:
+                bindings = []
+            has_public = any(
+                m in ("allUsers", "allAuthenticatedUsers")
+                for b in bindings
+                for m in b["members"]
+            )
+            row = {
+                "name": s.name.split("/")[-1],
+                "create_time": create_time.isoformat() if create_time else None,
+                "age_days": age_days,
+                "labels": dict(s.labels) if s.labels else {},
+                "bindings": bindings,
+                "has_public_binding": has_public,
+            }
+            secrets.append(row)
+            if age_days is not None and age_days > max_age_days:
+                stale.append(row)
+            if has_public:
+                publicly_bound.append(row)
+        return APIResponse.success(
+            data={
+                "secrets": secrets,
+                "stale": stale,
+                "publicly_bound": publicly_bound,
+                "max_age_days": max_age_days,
+            },
+            message=(
+                f"{len(secrets)} secrets; {len(stale)} stale (>{max_age_days}d); "
+                f"{len(publicly_bound)} publicly bound."
+            ),
+        )
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_public_bigquery_datasets(self, project_id: str) -> APIResponse:
+        """Find BigQuery datasets exposed to allUsers or allAuthenticatedUsers."""
+        logger.info(f"Checking BigQuery dataset visibility for project: {project_id}")
+        from google.cloud import bigquery
+
+        bq = bigquery.Client(project=project_id)
+        public = []
+        total = 0
+        for ref in bq.list_datasets(project=project_id):
+            total += 1
+            ds = bq.get_dataset(ref.reference)
+            for entry in (ds.access_entries or []):
+                # entity_id holds the special principals when entity_type == "specialGroup"
+                # or "iamMember"; we check both.
+                principal = entry.entity_id or ""
+                if principal in ("allUsers", "allAuthenticatedUsers"):
+                    public.append(
+                        {
+                            "dataset_id": f"{ds.project}:{ds.dataset_id}",
+                            "location": ds.location,
+                            "exposed_role": str(entry.role),
+                            "exposed_principal": principal,
+                        }
+                    )
+        return APIResponse.success(
+            data={
+                "public_datasets": public,
+                "summary": f"{len(public)} of {total} BigQuery datasets are public.",
+            },
+            message=f"Inspected {total} BigQuery datasets in {project_id}.",
+        )
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_dnssec_status(self, project_id: str) -> APIResponse:
+        """Report DNSSEC state for all managed zones in the project."""
+        logger.info(f"Listing DNSSEC status for project: {project_id}")
+        dns = self._get_client("dns")
+        zones, disabled = [], []
+        request = dns.managedZones().list(project=project_id)
+        while request is not None:
+            resp = request.execute()
+            for z in resp.get("managedZones", []):
+                state = (z.get("dnssecConfig") or {}).get("state", "off")
+                row = {
+                    "name": z.get("name"),
+                    "dns_name": z.get("dnsName"),
+                    "visibility": z.get("visibility", "public"),
+                    "dnssec_state": state,
+                }
+                zones.append(row)
+                if state != "on":
+                    disabled.append(row)
+            request = dns.managedZones().list_next(request, resp)
+        return APIResponse.success(
+            data={"zones": zones, "disabled": disabled},
+            message=f"{len(disabled)} of {len(zones)} managed zones have DNSSEC disabled.",
+        )
+
+    @handle_gcp_errors
+    @retry_on_failure()
+    def list_cloud_armor_coverage(self, project_id: str) -> APIResponse:
+        """Enumerate Cloud Armor security policies and flag internet-facing backends without one."""
+        logger.info(f"Checking Cloud Armor coverage for project: {project_id}")
+        sp_client = self._get_client("compute_security_policies")
+        bs_client = self._get_client("compute_backend_services")
+
+        policies = [
+            {
+                "name": p.name,
+                "description": p.description,
+                "rule_count": len(list(p.rules or [])),
+            }
+            for p in sp_client.list(project=project_id)
+        ]
+
+        backends, unprotected = [], []
+        for region_scope, response in bs_client.aggregated_list(project=project_id):
+            for bs in (response.backend_services or []):
+                scheme = (
+                    bs.load_balancing_scheme.name
+                    if hasattr(bs.load_balancing_scheme, "name")
+                    else str(bs.load_balancing_scheme)
+                )
+                has_policy = bool(getattr(bs, "security_policy", None))
+                row = {
+                    "name": bs.name,
+                    "region": region_scope.replace("regions/", "").replace("global", "global"),
+                    "load_balancing_scheme": scheme,
+                    "has_security_policy": has_policy,
+                    "security_policy": bs.security_policy.split("/")[-1] if has_policy else None,
+                }
+                backends.append(row)
+                if scheme in ("EXTERNAL", "EXTERNAL_MANAGED") and not has_policy:
+                    unprotected.append(row)
+        return APIResponse.success(
+            data={
+                "policies": policies,
+                "backend_services": backends,
+                "internet_facing_unprotected": unprotected,
+            },
+            message=(
+                f"{len(policies)} Cloud Armor policies; "
+                f"{len(unprotected)} internet-facing backends are unprotected."
+            ),
         )
