@@ -1,0 +1,42 @@
+{
+  "framework": "LINDDUN",
+  "version": "v2 (2024)",
+  "url": "https://linddun.org/",
+  "categories": [
+    {
+      "id": "L",
+      "name": "Linkability",
+      "description": "Ability to associate two or more items of interest (records, sessions, identifiers) with the same data subject without knowing identity. Risk: cross-system correlation, fingerprinting, profile aggregation."
+    },
+    {
+      "id": "I",
+      "name": "Identifiability",
+      "description": "Ability to identify a data subject within an anonymous or pseudonymous dataset. Risk: re-identification via quasi-identifiers, auxiliary data joins, model inversion."
+    },
+    {
+      "id": "N",
+      "name": "Non-repudiation",
+      "description": "Inability of a data subject to deny having performed an action, where deniability is required (e.g., whistleblowing, consent revocation). Risk: excessive logging, undeniable signatures."
+    },
+    {
+      "id": "D",
+      "name": "Detectability",
+      "description": "Ability to distinguish whether an item of interest exists, even without knowing its content. Risk: presence/absence side-channels, encrypted-flag leakage, search-pattern disclosure."
+    },
+    {
+      "id": "DD",
+      "name": "Disclosure of Information",
+      "description": "Unauthorized exposure of personal data to parties beyond intended scope. Risk: PII leakage in logs, errors, third-party transfers, training corpora, embeddings."
+    },
+    {
+      "id": "U",
+      "name": "Unawareness and Unintervenability",
+      "description": "Data subjects cannot understand, access, or intervene in processing of their data. Risk: opaque consent, no access/erasure flow, no opt-out for profiling/automated decisions."
+    },
+    {
+      "id": "NC",
+      "name": "Non-compliance",
+      "description": "Processing violates regulatory, contractual, or policy obligations (GDPR, HIPAA, CCPA, sector-specific rules). Risk: missing legal basis, cross-border transfer without safeguards, retention overreach."
+    }
+  ]
+}

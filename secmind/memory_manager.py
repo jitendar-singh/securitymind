@@ -13,11 +13,6 @@ import os
 import hashlib
 from datetime import datetime, timezone
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 class MemoryManager:
@@ -193,6 +188,65 @@ class MemoryManager:
                 timestamp DATETIME
             )
         """)
+        # M2 — Network & data-security checks
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vpc_flow_logs (
+                project_id TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS default_network (
+                project_id TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS kms_rotation (
+                cache_key TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS secrets (
+                cache_key TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_bq_datasets (
+                project_id TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dnssec_status (
+                project_id TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cloud_armor_coverage (
+                project_id TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
+        # Endpoint Security agent — generic per-tool cache. Key is sha256 over
+        # (provider, integration_name, tool_name, kwargs); TTL applied at read.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS endpoint_security_cache (
+                cache_key TEXT PRIMARY KEY,
+                data_json TEXT,
+                timestamp DATETIME
+            )
+        """)
         self.sqlite_conn.commit()
 
     def add_triage_result(self, cve_id: str, severity: str, recommendation: str, details: dict):
@@ -310,17 +364,28 @@ class MemoryManager:
             return result
         return None
 
-    def add_threat_model(self, app_details: dict, report: dict):
+    @staticmethod
+    def _threat_model_hash(app_details: dict, frameworks: list[str] | None = None) -> str:
+        """Compute the cache key for a threat model. Frameworks (sorted) are mixed in so the same
+        architecture cached under different framework sets gets distinct entries."""
+        payload = {
+            "app_details": app_details,
+            "frameworks": sorted(f.lower() for f in frameworks) if frameworks else [],
+        }
+        payload_str = json.dumps(payload, sort_keys=True)
+        return hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+
+    def add_threat_model(self, app_details: dict, report: dict, frameworks: list[str] | None = None):
         """
         Adds a new threat model report to the cache.
 
         Args:
             app_details (dict): The application details dictionary.
             report (dict): The threat model report.
+            frameworks (list[str] | None): Frameworks applied (mixed into the cache key).
         """
-        app_details_str = json.dumps(app_details, sort_keys=True)
-        app_details_hash = hashlib.sha256(app_details_str.encode('utf-8')).hexdigest()
-        
+        app_details_hash = self._threat_model_hash(app_details, frameworks)
+
         cursor = self.sqlite_conn.cursor()
         timestamp = datetime.now(timezone.utc)
 
@@ -334,18 +399,18 @@ class MemoryManager:
         self.sqlite_conn.commit()
         logger.info(f"Threat model cached with hash: {app_details_hash}")
 
-    def get_threat_model(self, app_details: dict) -> dict | None:
+    def get_threat_model(self, app_details: dict, frameworks: list[str] | None = None) -> dict | None:
         """
         Retrieves a cached threat model report.
 
         Args:
             app_details (dict): The application details dictionary.
+            frameworks (list[str] | None): Frameworks applied (mixed into the cache key).
 
         Returns:
             The cached report, or None if not found.
         """
-        app_details_str = json.dumps(app_details, sort_keys=True)
-        app_details_hash = hashlib.sha256(app_details_str.encode('utf-8')).hexdigest()
+        app_details_hash = self._threat_model_hash(app_details, frameworks)
 
         cursor = self.sqlite_conn.cursor()
         cursor.execute("SELECT report_json FROM threat_models WHERE app_details_hash = ?", (app_details_hash,))
@@ -354,7 +419,7 @@ class MemoryManager:
         if row:
             logger.info(f"Threat model cache hit with hash: {app_details_hash}")
             return json.loads(row['report_json'])
-        
+
         logger.info(f"Threat model cache miss for hash: {app_details_hash}")
         return None
 
@@ -983,6 +1048,126 @@ class MemoryManager:
 
         logger.info(f"Public GCS buckets cache miss for project: {project_id}")
         return None
+
+    # ------------------------------------------------------------------
+    # M2 — Network & data-security check caches
+    # ------------------------------------------------------------------
+
+    def _project_keyed_set(self, table: str, project_id: str, data: dict) -> None:
+        ts = datetime.now(timezone.utc)
+        self.sqlite_conn.execute(
+            f"INSERT OR REPLACE INTO {table} (project_id, data_json, timestamp) VALUES (?, ?, ?)",
+            (project_id, json.dumps(data), ts),
+        )
+        self.sqlite_conn.commit()
+        logger.info(f"{table} cached for project: {project_id}")
+
+    def _project_keyed_get(self, table: str, project_id: str) -> dict | None:
+        row = self.sqlite_conn.execute(
+            f"SELECT data_json FROM {table} WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        if row:
+            logger.info(f"{table} cache hit for project: {project_id}")
+            return json.loads(row["data_json"])
+        logger.info(f"{table} cache miss for project: {project_id}")
+        return None
+
+    def _hash_keyed_set(self, table: str, parts: tuple, data: dict) -> None:
+        cache_key = hashlib.sha256("-".join(str(p) for p in parts).encode("utf-8")).hexdigest()
+        ts = datetime.now(timezone.utc)
+        self.sqlite_conn.execute(
+            f"INSERT OR REPLACE INTO {table} (cache_key, data_json, timestamp) VALUES (?, ?, ?)",
+            (cache_key, json.dumps(data), ts),
+        )
+        self.sqlite_conn.commit()
+        logger.info(f"{table} cached with key: {cache_key}")
+
+    def _hash_keyed_get(self, table: str, parts: tuple) -> dict | None:
+        cache_key = hashlib.sha256("-".join(str(p) for p in parts).encode("utf-8")).hexdigest()
+        row = self.sqlite_conn.execute(
+            f"SELECT data_json FROM {table} WHERE cache_key = ?", (cache_key,)
+        ).fetchone()
+        if row:
+            logger.info(f"{table} cache hit with key: {cache_key}")
+            return json.loads(row["data_json"])
+        logger.info(f"{table} cache miss for key: {cache_key}")
+        return None
+
+    def add_vpc_flow_logs(self, project_id: str, data: dict) -> None:
+        self._project_keyed_set("vpc_flow_logs", project_id, data)
+
+    def get_vpc_flow_logs(self, project_id: str) -> dict | None:
+        return self._project_keyed_get("vpc_flow_logs", project_id)
+
+    def add_default_network(self, project_id: str, data: dict) -> None:
+        self._project_keyed_set("default_network", project_id, data)
+
+    def get_default_network(self, project_id: str) -> dict | None:
+        return self._project_keyed_get("default_network", project_id)
+
+    def add_kms_rotation(self, project_id: str, max_rotation_days: int, data: dict) -> None:
+        self._hash_keyed_set("kms_rotation", (project_id, max_rotation_days), data)
+
+    def get_kms_rotation(self, project_id: str, max_rotation_days: int) -> dict | None:
+        return self._hash_keyed_get("kms_rotation", (project_id, max_rotation_days))
+
+    def add_secrets(self, project_id: str, max_age_days: int, data: dict) -> None:
+        self._hash_keyed_set("secrets", (project_id, max_age_days), data)
+
+    def get_secrets(self, project_id: str, max_age_days: int) -> dict | None:
+        return self._hash_keyed_get("secrets", (project_id, max_age_days))
+
+    def add_public_bq_datasets(self, project_id: str, data: dict) -> None:
+        self._project_keyed_set("public_bq_datasets", project_id, data)
+
+    def get_public_bq_datasets(self, project_id: str) -> dict | None:
+        return self._project_keyed_get("public_bq_datasets", project_id)
+
+    def add_dnssec(self, project_id: str, data: dict) -> None:
+        self._project_keyed_set("dnssec_status", project_id, data)
+
+    def get_dnssec(self, project_id: str) -> dict | None:
+        return self._project_keyed_get("dnssec_status", project_id)
+
+    def add_cloud_armor(self, project_id: str, data: dict) -> None:
+        self._project_keyed_set("cloud_armor_coverage", project_id, data)
+
+    def get_cloud_armor(self, project_id: str) -> dict | None:
+        return self._project_keyed_get("cloud_armor_coverage", project_id)
+
+    # ------------------------------------------------------------------
+    # Endpoint Security agent cache — generic per-tool TTL cache
+    # ------------------------------------------------------------------
+
+    def add_endpoint_cache(self, cache_key: str, data: dict) -> None:
+        ts = datetime.now(timezone.utc).isoformat()
+        self.sqlite_conn.execute(
+            "INSERT OR REPLACE INTO endpoint_security_cache (cache_key, data_json, timestamp) VALUES (?, ?, ?)",
+            (cache_key, json.dumps(data), ts),
+        )
+        self.sqlite_conn.commit()
+
+    def get_endpoint_cache(self, cache_key: str, ttl_seconds: int = 900) -> dict | None:
+        row = self.sqlite_conn.execute(
+            "SELECT data_json, timestamp FROM endpoint_security_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            ts = datetime.fromisoformat(row["timestamp"])
+        except (TypeError, ValueError):
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - ts).total_seconds() > ttl_seconds:
+            return None
+        return json.loads(row["data_json"])
+
+    def clear_endpoint_cache(self) -> int:
+        cur = self.sqlite_conn.execute("DELETE FROM endpoint_security_cache")
+        self.sqlite_conn.commit()
+        return cur.rowcount
 
     def search_semantic_memory(self, query_text: str, n_results: int = 2) -> list[str]:
         """

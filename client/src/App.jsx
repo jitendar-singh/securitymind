@@ -1,60 +1,30 @@
-import React, { useState } from 'react';
-import './App.css';
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import AppShell from "./layouts/AppShell";
+import AuthGuard from "./components/AuthGuard";
+import Chat from "./pages/Chat";
+import Integrations from "./pages/Integrations";
+import History from "./pages/History";
+import Reports from "./pages/Reports";
+import Settings from "./pages/Settings";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 
-function App() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-
-  const handleSend = async () => {
-    if (input.trim()) {
-      const newMessages = [...messages, { text: input, sender: 'user' }];
-      setMessages(newMessages);
-      setInput('');
-
-      try {
-        const response = await fetch('http://localhost:5001/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: input }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-
-        const data = await response.json();
-        const agentMessage = { text: data.response, sender: 'agent' };
-        setMessages([...newMessages, agentMessage]);
-      } catch (error) {
-        console.error('There was a problem with the fetch operation:', error);
-        const errorMessage = { text: 'Error: Could not connect to the agent.', sender: 'agent' };
-        setMessages([...newMessages, errorMessage]);
-      }
-    }
-  };
-
+export default function App() {
   return (
-    <div className="chat-container">
-      <div className="chat-window">
-        {messages.map((msg, index) => (
-          <div key={index} className={`message ${msg.sender}`}>
-            {msg.text}
-          </div>
-        ))}
-      </div>
-      <div className="chat-input">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-        />
-        <button onClick={handleSend}>Send</button>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route element={<AuthGuard />}>
+          <Route element={<AppShell />}>
+            <Route index element={<Chat />} />
+            <Route path="integrations" element={<Integrations />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="history" element={<History />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
-
-export default App;

@@ -3,11 +3,12 @@ import json
 import requests
 from typing import List
 from google.adk.agents import Agent
-import google.genai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from pydantic import BaseModel
 
-from secmind.memory_manager import MemoryManager
+from secmind.memory import get_memory_manager
 
 
 class Issue(BaseModel):
@@ -27,8 +28,8 @@ def review_code(code_snippet: str) -> dict:
     Focuses on code smells mentioned in the code_smells_list, readability, efficiency, security, and provides developer-like feedback.
     Supports multiple programming languages.
     """
-    memory = MemoryManager()
-    
+    memory = get_memory_manager()
+
     # Check cache first
     cached_review = memory.get_code_review(code_snippet)
     if cached_review:
@@ -37,11 +38,10 @@ def review_code(code_snippet: str) -> dict:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return {"issues": [], "fixes": [], "overall_comments": "Google API key not set."}
-                
-    model = genai.GenerativeModel(
-        'gemini-2.5-pro', 
-    )
-    
+
+    client = genai.Client()
+    model_name = "gemini-2.5-pro"
+
     # Step 1: Auto-detect the language
     detection_prompt = f"""
     What programming language is this code snippet written in? Respond with only the language name (e.g., 'Python', 'JavaScript'). If it's not clear, default to 'Python'.
@@ -51,7 +51,10 @@ def review_code(code_snippet: str) -> dict:
     ```
     """
     try:
-        detection_response = model.generate_content(detection_prompt)
+        detection_response = client.models.generate_content(
+            model=model_name,
+            contents=detection_prompt,
+        )
         language = detection_response.text.strip().lower().capitalize()
     except Exception:
         language = "Python"  # Fallback
@@ -83,13 +86,14 @@ def review_code(code_snippet: str) -> dict:
         """
     
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=Review,  # Enforces the structure
-                temperature=0.0  # Increase determinism for structured output
-            )
+                temperature=0.0,  # Increase determinism for structured output
+            ),
         )
         
         # Try to use parsed if available

@@ -1,35 +1,11 @@
-"""
-Constants for Application Security Agent.
-"""
-
-# Threat modeling frameworks
-STRIDE_CATEGORIES = [
-    "Spoofing",
-    "Tampering",
-    "Repudiation",
-    "Information Disclosure",
-    "Denial of Service",
-    "Elevation of Privilege"
-]
+"""Constants for the Threat Modeling Agent."""
 
 # Risk levels
 RISK_LEVELS = ["Critical", "High", "Medium", "Low", "Info"]
 LIKELIHOOD_LEVELS = ["High", "Medium", "Low"]
 IMPACT_LEVELS = ["High", "Medium", "Low"]
 
-# Application components to assess
-APP_COMPONENTS = [
-    "framework",
-    "networking",
-    "deployment_env",
-    "cloud_config",
-    "authentication",
-    "data_storage",
-    "apis",
-    "third_party_services"
-]
-
-# Recommendation categories
+# Recommendation categories — shared across frameworks for the merged recommendations dict
 RECOMMENDATION_CATEGORIES = [
     "authentication",
     "authorization",
@@ -38,7 +14,7 @@ RECOMMENDATION_CATEGORIES = [
     "networking",
     "input_validation",
     "logging_monitoring",
-    "general"
+    "general",
 ]
 
 # Gemini model configuration
