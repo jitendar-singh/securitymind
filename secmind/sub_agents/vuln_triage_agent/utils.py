@@ -157,6 +157,6 @@ def sanitize_input(text: str, max_length: int = 1000) -> str:
     sanitized = text[:max_length]
     
     # Remove potentially dangerous characters
-    sanitized = re.sub(r'[<>"'&']', '', sanitized)
+    sanitized = re.sub(r"[<>\"'&]", '', sanitized)
     
     return sanitized.strip()

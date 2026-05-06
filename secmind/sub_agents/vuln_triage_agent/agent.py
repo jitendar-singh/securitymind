@@ -19,6 +19,7 @@ from .vulnerability_triage import triage_vulnerability
 from .license_checker import check_package_license
 from .sbom_parser import parse_sbom
 from .instruction_builder import InstructionBuilder
+from secmind.sub_agents._scope_guard import build_scope_guard
 
 # Load environment variables
 load_dotenv()
@@ -46,16 +47,24 @@ vuln_triage_agent = Agent(
     name="vuln_triage_agent",
     model="gemini-2.5-pro",
     description=(
-        "Triages vulnerabilities and verifies software package licenses "
-        "across multiple ecosystems, with SBOM parsing support. "
-        "Automatically detects ecosystems and searches web for unknown licenses."
+        "Triages CVE vulnerabilities (NVD + cve.org lookup, CVSS scoring, patch priority), "
+        "checks software package licenses across PyPI/NPM/Maven with automatic ecosystem "
+        "detection, and parses CycloneDX/SPDX SBOMs for license compliance. "
+        "Input: CVE IDs, package names, or SBOM JSON content. "
+        "Output: severity assessments, license identifiers, or SBOM compliance summaries. "
+        "Does NOT review code, check cloud posture, draft emails, or answer general "
+        "programming questions."
     ),
-    instruction=InstructionBuilder.build_full_instruction(),
+    instruction=InstructionBuilder.build_full_instruction() + build_scope_guard(
+        "vulnerability triage, license checking, and SBOM parsing"
+    ),
     tools=[agent_tool.AgentTool(agent=search_agent),
         triage_vulnerability,
         check_package_license,
         parse_sbom,
-    ]
+    ],
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
 )
 
 # ============================================================================

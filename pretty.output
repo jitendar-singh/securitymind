@@ -1,0 +1,347 @@
+Feature: Authentication # tests/features/auth.feature:1
+  Users can sign up, log in, check their session, and log out.
+  Scenario: Successful signup                                                           # tests/features/auth.feature:4
+    When I sign up with email "alice@example.com" password "Secret99!" and name "Alice" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 200                                              # tests/features/steps/auth_steps.py:77
+    And the response JSON should have key "user"                                        # tests/features/steps/auth_steps.py:85
+    And the response JSON at "user.email" should be "alice@example.com"                 # tests/features/steps/auth_steps.py:91
+    And a session cookie should be set                                                  # tests/features/steps/auth_steps.py:107
+
+  Scenario: Signup with duplicate email                                               # tests/features/auth.feature:11
+    Given a user exists with email "bob@example.com" and password "Secret99!"         # tests/features/steps/auth_steps.py:6
+    When I sign up with email "bob@example.com" password "Other1234!" and name "Bob2" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 400                                            # tests/features/steps/auth_steps.py:77
+    And the response JSON at "error" should contain "already exists"                  # tests/features/steps/auth_steps.py:99
+
+  Scenario: Signup with missing password                                          # tests/features/auth.feature:17
+    When I sign up with email "no-pass@example.com" password "" and name "NoPass" # tests/features/steps/auth_steps.py:40
+    Then the response status should be 400                                        # tests/features/steps/auth_steps.py:77
+
+  Scenario: Signup with short password                                            # tests/features/auth.feature:21
+    When I sign up with email "short@example.com" password "abc" and name "Short" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 400                                        # tests/features/steps/auth_steps.py:77
+
+  Scenario: Signup with invalid email                                            # tests/features/auth.feature:25
+    When I sign up with email "not-an-email" password "Secret99!" and name "Bad" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 400                                       # tests/features/steps/auth_steps.py:77
+
+  Scenario: Successful login                                                    # tests/features/auth.feature:29
+    Given a user exists with email "carol@example.com" and password "Secret99!" # tests/features/steps/auth_steps.py:6
+    When I log in with email "carol@example.com" and password "Secret99!"       # tests/features/steps/auth_steps.py:49
+    Then the response status should be 200                                      # tests/features/steps/auth_steps.py:77
+    And the response JSON should have key "user"                                # tests/features/steps/auth_steps.py:85
+    And a session cookie should be set                                          # tests/features/steps/auth_steps.py:107
+
+  Scenario: Login with wrong password                                          # tests/features/auth.feature:36
+    Given a user exists with email "dave@example.com" and password "Secret99!" # tests/features/steps/auth_steps.py:6
+    When I log in with email "dave@example.com" and password "WrongPass1!"     # tests/features/steps/auth_steps.py:49
+    Then the response status should be 401                                     # tests/features/steps/auth_steps.py:77
+
+  Scenario: Login with nonexistent email                                  # tests/features/auth.feature:41
+    When I log in with email "ghost@example.com" and password "Secret99!" # tests/features/steps/auth_steps.py:49
+    Then the response status should be 401                                # tests/features/steps/auth_steps.py:77
+
+  Scenario: Check session with valid cookie                             # tests/features/auth.feature:45
+    Given I am logged in as "eve@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I request my profile                                           # tests/features/steps/auth_steps.py:58
+    Then the response status should be 200                              # tests/features/steps/auth_steps.py:77
+    And the response JSON at "user.email" should be "eve@example.com"   # tests/features/steps/auth_steps.py:91
+
+  Scenario: Check session without cookie        # tests/features/auth.feature:51
+    When I request my profile without a session # tests/features/steps/auth_steps.py:63
+    Then the response status should be 401      # tests/features/steps/auth_steps.py:77
+
+  Scenario: Logout clears session                                         # tests/features/auth.feature:55
+    Given I am logged in as "frank@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I log out                                                        # tests/features/steps/auth_steps.py:72
+    Then the response status should be 200                                # tests/features/steps/auth_steps.py:77
+    When I request my profile                                             # tests/features/steps/auth_steps.py:58
+    Then the response status should be 401                                # tests/features/steps/auth_steps.py:77
+
+Feature: Authorization Guards # tests/features/authorization.feature:1
+  All protected routes return 401 without a valid session.
+  Scenario: GET /auth/me without auth                # tests/features/authorization.feature:4
+    When I make an unauthenticated GET to "/auth/me" # tests/features/steps/authorization_steps.py:5
+    Then the response status should be 401           # tests/features/steps/auth_steps.py:77
+
+  Scenario: POST /chat without auth                # tests/features/authorization.feature:8
+    When I make an unauthenticated POST to "/chat" # tests/features/steps/authorization_steps.py:11
+    Then the response status should be 401         # tests/features/steps/auth_steps.py:77
+
+  Scenario: GET /integrations without auth                # tests/features/authorization.feature:12
+    When I make an unauthenticated GET to "/integrations" # tests/features/steps/authorization_steps.py:5
+    Then the response status should be 401                # tests/features/steps/auth_steps.py:77
+
+  Scenario: POST /integrations without auth                # tests/features/authorization.feature:16
+    When I make an unauthenticated POST to "/integrations" # tests/features/steps/authorization_steps.py:11
+    Then the response status should be 401                 # tests/features/steps/auth_steps.py:77
+
+  Scenario: GET /integrations/1 without auth                # tests/features/authorization.feature:20
+    When I make an unauthenticated GET to "/integrations/1" # tests/features/steps/authorization_steps.py:5
+    Then the response status should be 401                  # tests/features/steps/auth_steps.py:77
+
+  Scenario: PUT /integrations/1 without auth                # tests/features/authorization.feature:24
+    When I make an unauthenticated PUT to "/integrations/1" # tests/features/steps/authorization_steps.py:17
+    Then the response status should be 401                  # tests/features/steps/auth_steps.py:77
+
+  Scenario: DELETE /integrations/1 without auth                # tests/features/authorization.feature:28
+    When I make an unauthenticated DELETE to "/integrations/1" # tests/features/steps/authorization_steps.py:23
+    Then the response status should be 401                     # tests/features/steps/auth_steps.py:77
+
+  Scenario: POST /integrations/1/test without auth                # tests/features/authorization.feature:32
+    When I make an unauthenticated POST to "/integrations/1/test" # tests/features/steps/authorization_steps.py:11
+    Then the response status should be 401                        # tests/features/steps/auth_steps.py:77
+
+  Scenario: GET /settings/models without auth                # tests/features/authorization.feature:36
+    When I make an unauthenticated GET to "/settings/models" # tests/features/steps/authorization_steps.py:5
+    Then the response status should be 401                   # tests/features/steps/auth_steps.py:77
+
+  Scenario: PUT /settings/models without auth                # tests/features/authorization.feature:40
+    When I make an unauthenticated PUT to "/settings/models" # tests/features/steps/authorization_steps.py:17
+    Then the response status should be 401                   # tests/features/steps/auth_steps.py:77
+
+  Scenario: GET /reports without auth                # tests/features/authorization.feature:44
+    When I make an unauthenticated GET to "/reports" # tests/features/steps/authorization_steps.py:5
+    Then the response status should be 401           # tests/features/steps/auth_steps.py:77
+
+  Scenario: GET /reports/somefile.html without auth                # tests/features/authorization.feature:48
+    When I make an unauthenticated GET to "/reports/somefile.html" # tests/features/steps/authorization_steps.py:5
+    Then the response status should be 401                         # tests/features/steps/auth_steps.py:77
+
+Feature: Chat # tests/features/chat.feature:1
+  Authenticated users can send messages to the security agent.
+  Scenario: Send a message while authenticated                            # tests/features/chat.feature:4
+    Given I am logged in as "user1@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I send a chat message "What vulnerabilities exist?"              # tests/features/steps/chat_steps.py:6
+    Then the response status should be 200                                # tests/features/steps/auth_steps.py:77
+    And the response JSON should have key "response"                      # tests/features/steps/auth_steps.py:85
+    And the response JSON should have key "agent"                         # tests/features/steps/auth_steps.py:85
+
+  Scenario: Send a message without authentication        # tests/features/chat.feature:11
+    When I send a chat message "hello" without a session # tests/features/steps/chat_steps.py:24
+    Then the response status should be 401               # tests/features/steps/auth_steps.py:77
+
+  Scenario: Send an empty message                                         # tests/features/chat.feature:15
+    Given I am logged in as "user2@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I send a chat message ""                                         # tests/features/steps/chat_steps.py:15
+    Then the response status should be 400                                # tests/features/steps/auth_steps.py:77
+    And the response JSON at "error" should contain "No message"          # tests/features/steps/auth_steps.py:99
+
+Feature: Integration Connection Test # tests/features/integration_test.feature:1
+  Users can test whether their stored integration credentials are valid.
+  Scenario: Test connection for nonexistent integration                      # tests/features/integration_test.feature:4
+    Given I am logged in as "testconn@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I test connection for integration 999                               # tests/features/steps/integration_test_steps.py:16
+    Then the response status should be 404                                   # tests/features/steps/auth_steps.py:77
+
+  Scenario: Test connection returns provider result                           # tests/features/integration_test.feature:9
+    Given I am logged in as "testconn2@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "nvd" and name "default"  # tests/features/steps/integrations_steps.py:10
+    And the connection tester is mocked to return success                     # tests/features/steps/integration_test_steps.py:6
+    When I test connection for integration 1                                  # tests/features/steps/integration_test_steps.py:16
+    Then the response status should be 200                                    # tests/features/steps/auth_steps.py:77
+    And the response JSON at "status" should be "success"                     # tests/features/steps/auth_steps.py:91
+
+Feature: Integrations CRUD # tests/features/integrations.feature:1
+  Authenticated users manage their encrypted integration credentials.
+  Scenario: Create an integration                                              # tests/features/integrations.feature:4
+    Given I am logged in as "integ-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I create an integration with provider "jira" name "main" and config:  # tests/features/steps/integrations_steps.py:21
+      | key        | value                    |
+      | JIRA_URL   | https://jira.example.com |
+      | JIRA_USER  | me@co.com                |
+      | JIRA_TOKEN | tok123                   |
+    Then the response status should be 201                                     # tests/features/steps/auth_steps.py:77
+    And the response JSON at "provider" should be "jira"                       # tests/features/steps/auth_steps.py:91
+    And the response JSON at "name" should be "main"                           # tests/features/steps/auth_steps.py:91
+    And the response JSON should have key "fields"                             # tests/features/steps/auth_steps.py:85
+    And the response JSON should not have key "config"                         # tests/features/steps/integrations_steps.py:79
+
+  Scenario: List integrations returns only current user's records             # tests/features/integrations.feature:17
+    Given I am logged in as "list-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "nvd" and name "default"  # tests/features/steps/integrations_steps.py:10
+    When I list my integrations                                               # tests/features/steps/integrations_steps.py:40
+    Then the response status should be 200                                    # tests/features/steps/auth_steps.py:77
+    And the response should be a list of length 1                             # tests/features/steps/integrations_steps.py:85
+
+  Scenario: Get integration by ID                                            # tests/features/integrations.feature:24
+    Given I am logged in as "get-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "github" and name "main" # tests/features/steps/integrations_steps.py:10
+    When I get integration 1                                                 # tests/features/steps/integrations_steps.py:45
+    Then the response status should be 200                                   # tests/features/steps/auth_steps.py:77
+    And the response JSON at "provider" should be "github"                   # tests/features/steps/auth_steps.py:91
+
+  Scenario: Cannot access another user's integration                             # tests/features/integrations.feature:31
+    Given I am logged in as "owner@example.com" with password "Secret99!"        # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "jira" and name "mine"       # tests/features/steps/integrations_steps.py:10
+    When I log out                                                               # tests/features/steps/auth_steps.py:72
+    And I sign up and log in as "intruder@example.com" with password "Secret99!" # tests/features/steps/integrations_steps.py:64
+    And I get integration 1                                                      # tests/features/steps/integrations_steps.py:45
+    Then the response status should be 404                                       # tests/features/steps/auth_steps.py:77
+
+  Scenario: Update integration name                                             # tests/features/integrations.feature:39
+    Given I am logged in as "update-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "aws" and name "old-name"   # tests/features/steps/integrations_steps.py:10
+    When I update integration 1 with name "new-name"                            # tests/features/steps/integrations_steps.py:50
+    Then the response status should be 200                                      # tests/features/steps/auth_steps.py:77
+    And the response JSON at "name" should be "new-name"                        # tests/features/steps/auth_steps.py:91
+
+  Scenario: Delete integration                                               # tests/features/integrations.feature:46
+    Given I am logged in as "del-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "gcp" and name "test"    # tests/features/steps/integrations_steps.py:10
+    When I delete integration 1                                              # tests/features/steps/integrations_steps.py:59
+    Then the response status should be 204                                   # tests/features/steps/auth_steps.py:77
+    When I get integration 1                                                 # tests/features/steps/integrations_steps.py:45
+    Then the response status should be 404                                   # tests/features/steps/auth_steps.py:77
+
+  Scenario: Delete nonexistent integration                                   # tests/features/integrations.feature:54
+    Given I am logged in as "del-miss@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I delete integration 999                                            # tests/features/steps/integrations_steps.py:59
+    Then the response status should be 404                                   # tests/features/steps/auth_steps.py:77
+
+  Scenario: Create duplicate provider/name                                    # tests/features/integrations.feature:59
+    Given I am logged in as "dup-user@example.com" with password "Secret99!"  # tests/features/steps/auth_steps.py:15
+    And I have created an integration with provider "jira" and name "main"    # tests/features/steps/integrations_steps.py:10
+    When I create an integration with provider "jira" name "main" and config: # tests/features/steps/integrations_steps.py:21
+      | key        | value |
+      | JIRA_TOKEN | x     |
+    Then the response status should be 409                                    # tests/features/steps/auth_steps.py:77
+
+  Scenario: Create integration with missing fields                           # tests/features/integrations.feature:67
+    Given I am logged in as "bad-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I create an integration with empty provider and name                # tests/features/steps/integrations_steps.py:31
+    Then the response status should be 400                                   # tests/features/steps/auth_steps.py:77
+
+Feature: OAuth Error Handling # tests/features/oauth.feature:1
+  Google OAuth callback rejects invalid requests.
+  Scenario: Callback with error parameter                           # tests/features/oauth.feature:4
+    When I call the OAuth callback with error "access_denied"       # tests/features/steps/oauth_steps.py:4
+    Then the response status should be 400                          # tests/features/steps/auth_steps.py:77
+    And the response JSON at "error" should contain "access_denied" # tests/features/steps/auth_steps.py:99
+
+  Scenario: Callback with state mismatch                                   # tests/features/oauth.feature:9
+    When I call the OAuth callback with code "abc" and state "wrong-state" # tests/features/steps/oauth_steps.py:9
+    Then the response status should be 400                                 # tests/features/steps/auth_steps.py:77
+    And the response JSON at "error" should contain "state mismatch"       # tests/features/steps/auth_steps.py:99
+
+  Scenario: Callback with missing code                             # tests/features/oauth.feature:14
+    When I call the OAuth callback with no code                    # tests/features/steps/oauth_steps.py:16
+    Then the response status should be 400                         # tests/features/steps/auth_steps.py:77
+    And the response JSON at "error" should contain "missing code" # tests/features/steps/auth_steps.py:99
+
+Feature: Rate Limiting # tests/features/rate_limiting.feature:1
+  Auth endpoints are rate-limited to prevent brute-force attacks.
+  Scenario: Login rate limit after 10 attempts                                             # tests/features/rate_limiting.feature:4
+    Given a user exists with email "victim@example.com" and password "Secret99!"           # tests/features/steps/auth_steps.py:6
+    When I attempt to log in 11 times with email "victim@example.com" and password "wrong" # tests/features/steps/rate_limiting_steps.py:6
+    Then the first 10 responses should have status 401                                     # tests/features/steps/rate_limiting_steps.py:34
+    And the 11th response should have status 429                                           # tests/features/steps/rate_limiting_steps.py:50
+
+  Scenario: Signup rate limit after 5 attempts                      # tests/features/rate_limiting.feature:10
+    When I attempt to sign up 6 times with email "spam@example.com" # tests/features/steps/rate_limiting_steps.py:18
+    Then the first 5 responses should have status 200 or 400        # tests/features/steps/rate_limiting_steps.py:42
+    And the 6th response should have status 429                     # tests/features/steps/rate_limiting_steps.py:50
+
+Feature: Reports # tests/features/reports.feature:1
+  Users can list and download generated security reports.
+  Scenario: List reports when no reports exist                                    # tests/features/reports.feature:4
+    Given I am logged in as "reports-empty@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And the reports directory is isolated                                         # tests/features/steps/reports_steps.py:14
+    When I list reports                                                           # tests/features/steps/reports_steps.py:28
+    Then the response status should be 200                                        # tests/features/steps/auth_steps.py:77
+    And the response should be a list of length 0                                 # tests/features/steps/integrations_steps.py:85
+
+  Scenario: List reports with files on disk                                      # tests/features/reports.feature:11
+    Given I am logged in as "reports-list@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And a compliance report file exists for the current user                     # tests/features/steps/reports_steps.py:19
+    When I list reports                                                          # tests/features/steps/reports_steps.py:28
+    Then the response status should be 200                                       # tests/features/steps/auth_steps.py:77
+    And the response should be a list of length 1                                # tests/features/steps/integrations_steps.py:85
+    And the first report should have type "cloud_compliance"                     # tests/features/steps/reports_steps.py:38
+
+  Scenario: Download a report                                                  # tests/features/reports.feature:19
+    Given I am logged in as "reports-dl@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And a compliance report file exists for the current user                   # tests/features/steps/reports_steps.py:19
+    When I download report "compliance_report_test_project.html"               # tests/features/steps/reports_steps.py:33
+    Then the response status should be 200                                     # tests/features/steps/auth_steps.py:77
+
+  Scenario: Download nonexistent report                                          # tests/features/reports.feature:25
+    Given I am logged in as "reports-miss@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I download report "nonexistent.html"                                    # tests/features/steps/reports_steps.py:33
+    Then the response status should be 404                                       # tests/features/steps/auth_steps.py:77
+
+  Scenario: Path traversal is rejected                                                # tests/features/reports.feature:30
+    Given I am logged in as "reports-traversal@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I download report "../etc/passwd"                                            # tests/features/steps/reports_steps.py:33
+    Then the response status should be 404                                            # tests/features/steps/auth_steps.py:77
+
+Feature: Role Assignment and Orphan Claims # tests/features/roles.feature:1
+  The first user gets admin role. Admin claims orphan integrations.
+  Scenario: First signup gets admin role                                                # tests/features/roles.feature:4
+    When I sign up with email "first@example.com" password "Secret99!" and name "First" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 200                                              # tests/features/steps/auth_steps.py:77
+    And the response JSON at "user.role" should be "admin"                              # tests/features/steps/auth_steps.py:91
+
+  Scenario: Second signup gets user role                                                  # tests/features/roles.feature:9
+    Given a user exists with email "admin@example.com" and password "Secret99!"           # tests/features/steps/auth_steps.py:6
+    When I sign up with email "second@example.com" password "Secret99!" and name "Second" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 200                                                # tests/features/steps/auth_steps.py:77
+    And the response JSON at "user.role" should be "user"                                 # tests/features/steps/auth_steps.py:91
+
+  Scenario: First admin claims orphan integrations                                            # tests/features/roles.feature:15
+    Given orphan integrations exist in the store                                              # tests/features/steps/roles_steps.py:8
+    When I sign up with email "claim-admin@example.com" password "Secret99!" and name "Admin" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 200                                                    # tests/features/steps/auth_steps.py:77
+    When I list my integrations                                                               # tests/features/steps/integrations_steps.py:40
+    Then the response should be a list of length 1                                            # tests/features/steps/integrations_steps.py:85
+
+Feature: Security Hardening # tests/features/security.feature:1
+  Security controls protect cookies, tokens, and secrets.
+  Scenario: Logout revokes the JWT so it cannot be reused                       # tests/features/security.feature:4
+    Given I am logged in as "revoke-test@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    And I save my current session cookie                                        # tests/features/steps/security_steps.py:6
+    When I log out                                                              # tests/features/steps/auth_steps.py:72
+    And I restore my saved session cookie                                       # tests/features/steps/security_steps.py:13
+    And I request my profile                                                    # tests/features/steps/auth_steps.py:58
+    Then the response status should be 401                                      # tests/features/steps/auth_steps.py:77
+
+  Scenario: Session cookie is not marked Secure in development                             # tests/features/security.feature:12
+    Given the environment is "development"                                                 # tests/features/steps/security_steps.py:22
+    When I sign up with email "dev-cookie@example.com" password "Secret99!" and name "Dev" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 200                                                 # tests/features/steps/auth_steps.py:77
+    And the session cookie should not have the Secure flag                                 # tests/features/steps/security_steps.py:39
+
+  Scenario: Session cookie is marked Secure in production                                    # tests/features/security.feature:18
+    Given the environment is "production"                                                    # tests/features/steps/security_steps.py:22
+    When I sign up with email "prod-cookie@example.com" password "Secret99!" and name "Prod" # tests/features/steps/auth_steps.py:31
+    Then the response status should be 200                                                   # tests/features/steps/auth_steps.py:77
+    And the session cookie should have the Secure flag                                       # tests/features/steps/security_steps.py:29
+
+Feature: Model Settings # tests/features/settings.feature:1
+  Users can view and change per-agent model selections.
+  Scenario: Get default model selections                                          # tests/features/settings.feature:4
+    Given I am logged in as "settings-user@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I get model settings                                                     # tests/features/steps/settings_steps.py:7
+    Then the response status should be 200                                        # tests/features/steps/auth_steps.py:77
+    And the response JSON should have key "agents"                                # tests/features/steps/auth_steps.py:85
+    And the response JSON should have key "selections"                            # tests/features/steps/auth_steps.py:85
+
+  Scenario: Update model selection                                               # tests/features/settings.feature:11
+    Given I am logged in as "settings-put@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I set model for agent "secmind" to "gemini-2.5-flash"                   # tests/features/steps/settings_steps.py:12
+    Then the response status should be 200                                       # tests/features/steps/auth_steps.py:77
+
+  Scenario: Update with unknown agent ID                                         # tests/features/settings.feature:16
+    Given I am logged in as "settings-bad@example.com" with password "Secret99!" # tests/features/steps/auth_steps.py:15
+    When I set model for agent "nonexistent_agent" to "gemini-2.5-flash"         # tests/features/steps/settings_steps.py:12
+    Then the response status should be 400                                       # tests/features/steps/auth_steps.py:77
+    And the response JSON at "error" should contain "Unknown agent"              # tests/features/steps/auth_steps.py:99
+
+  Scenario: Get settings without auth           # tests/features/settings.feature:22
+    When I get model settings without a session # tests/features/steps/settings_steps.py:21
+    Then the response status should be 401      # tests/features/steps/auth_steps.py:77
+
+  Scenario: Update settings without auth           # tests/features/settings.feature:26
+    When I update model settings without a session # tests/features/steps/settings_steps.py:27
+    Then the response status should be 401         # tests/features/steps/auth_steps.py:77
+

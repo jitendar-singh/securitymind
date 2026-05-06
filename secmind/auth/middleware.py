@@ -29,7 +29,8 @@ def require_auth(fn: Callable) -> Callable:
 
 def set_session_cookie(response: Response, user: User) -> Response:
     """Attach the signed session cookie for ``user`` to ``response``."""
-    secure = os.environ.get("SECMIND_COOKIE_SECURE", "0") == "1"
+    _default = "0" if os.environ.get("SECMIND_ENV", "development") == "development" else "1"
+    secure = os.environ.get("SECMIND_COOKIE_SECURE", _default) == "1"
     response.set_cookie(
         COOKIE_NAME,
         issue(user),

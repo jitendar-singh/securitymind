@@ -41,6 +41,8 @@ memory/settings/
 memory/integrations.db
 memory/.fernet_key
 memory/.jwt_secret
+memory/vector_memory/
+memory/structured_memory.db/
 
 # GitLab specific
 .gitlab/
@@ -54,3 +56,8 @@ CLAUDE.md
 
 # History specific
 TODO.txt
+feature_priority.txt
+testing.txt
+
+# Testing specific
+.coverage

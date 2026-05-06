@@ -1,13 +1,11 @@
-import os
 import json
 import requests
 from typing import List
 from google.adk.agents import Agent
-from google import genai
-from google.genai import types as genai_types
 
 from pydantic import BaseModel
 
+from secmind.llm import generate_json
 from secmind.memory import get_memory_manager
 
 
@@ -30,35 +28,28 @@ def review_code(code_snippet: str) -> dict:
     """
     memory = get_memory_manager()
 
-    # Check cache first
     cached_review = memory.get_code_review(code_snippet)
     if cached_review:
         return cached_review
 
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        return {"issues": [], "fixes": [], "overall_comments": "Google API key not set."}
+    def _current_model():
+        from secmind.sub_agents.code_review_agent.agent import code_review_agent
+        return getattr(code_review_agent, "model", "gemini-2.5-pro")
 
-    client = genai.Client()
-    model_name = "gemini-2.5-pro"
+    model = _current_model()
 
-    # Step 1: Auto-detect the language
-    detection_prompt = f"""
-    What programming language is this code snippet written in? Respond with only the language name (e.g., 'Python', 'JavaScript'). If it's not clear, default to 'Python'.
-
-    ```
-    {code_snippet}
-    ```
-    """
+    detection_prompt = (
+        "What programming language is this code snippet written in? "
+        'Respond with JSON: {"language": "<name>"}. '
+        "If it's not clear, default to Python.\n\n"
+        f"```\n{code_snippet}\n```"
+    )
     try:
-        detection_response = client.models.generate_content(
-            model=model_name,
-            contents=detection_prompt,
-        )
-        language = detection_response.text.strip().lower().capitalize()
+        det_text = generate_json(detection_prompt, model, temperature=0.0)
+        language = json.loads(det_text).get("language", "Python").strip().capitalize()
     except Exception:
-        language = "Python"  # Fallback
-    
+        language = "Python"
+
     code_smells_list = [
         "Duplicate Code", "Long Method", "Large Class/God Class", "Long Parameter List",
         "Primitive Obsession", "Data Clumps", "Feature Envy", "Inappropriate Intimacy",
@@ -68,54 +59,35 @@ def review_code(code_snippet: str) -> dict:
         "Data Class", "Dead Code", "Speculative Generality", "Excessive Comments",
         "Improper Names", "God Object"
     ]
-    
-    prompt = f"""
-            Act as a senior software developer with expertise in {language}. Review the following code snippet:
-            ```
-            {code_snippet}
-            ```
-            Provide a thorough review as if you are giving feedback in a code review session. Cover:
-            - Code smells: Check for any of these - {', '.join(code_smells_list)} - and any others you identify.
-            - Readability and maintainability: Naming conventions, structure, comments.
-            - Efficiency and performance: Potential bottlenecks, optimizations.
-            - Security issues: Vulnerabilities like injections, insecure practices.
-            - Best practices: Language-specific idioms, design patterns.
-            - Overall strengths and weaknesses.
 
-            Respond strictly with the structured output defined by the schema.
-        """
-    
+    prompt = f"""Act as a senior software developer with expertise in {language}. Review the following code snippet:
+```
+{code_snippet}
+```
+Provide a thorough review as if you are giving feedback in a code review session. Cover:
+- Code smells: Check for any of these - {', '.join(code_smells_list)} - and any others you identify.
+- Readability and maintainability: Naming conventions, structure, comments.
+- Efficiency and performance: Potential bottlenecks, optimizations.
+- Security issues: Vulnerabilities like injections, insecure practices.
+- Best practices: Language-specific idioms, design patterns.
+- Overall strengths and weaknesses.
+
+Respond with JSON matching this schema: {{"issues": [{{"type": "...", "description": "...", "location": "..."}}], "fixes": ["..."], "overall_comments": "..."}}"""
+
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=Review,  # Enforces the structure
-                temperature=0.0,  # Increase determinism for structured output
-            ),
+        from secmind.llm import resolve_model_id
+        model_id = resolve_model_id(model)
+        raw = generate_json(
+            prompt, model, temperature=0.0,
+            response_schema=Review if model_id.startswith("gemini") else None,
         )
-        
-        # Try to use parsed if available
-        try:
-            review_data = response.parsed.dict()
-        except AttributeError:
-            # Fallback to parsing text if schema enforcement fails
-            json_str = response.text.strip()
-            if json_str.startswith('```json'):
-                json_str = json_str.split('```json')[1].split('```')[0].strip()
-            elif json_str.startswith('```'):
-                json_str = json_str[3:-3].strip()
-            review_data = json.loads(json_str)
-            # Basic validation
-            if not all(key in review_data for key in ["issues", "fixes", "overall_comments"]):
-                raise ValueError("Invalid response structure after fallback")
-        
-        # Add to cache
+        review_data = json.loads(raw)
+        if not all(key in review_data for key in ["issues", "fixes", "overall_comments"]):
+            raise ValueError("Invalid response structure")
+
         memory.add_code_review(code_snippet, review_data)
-        
         return review_data
-    
+
     except Exception as e:
         return {
             "issues": [{"type": "Error", "description": f"Failed to generate review: {str(e)}", "location": "N/A"}],
@@ -140,15 +112,31 @@ def get_github_pr_diff(pr_url: str) -> str:
         return f"Error fetching diff: {str(e)}"
 
 # - Update the Agent configuration to include the new tool:
+from secmind.sub_agents._scope_guard import build_scope_guard
+
 code_review_agent = Agent(
     name="code_review_agent",
     model="gemini-2.5-pro",
-    description="Reviews code for security,code smells and best practices.And delegates to jira_agent if issues found.",
-    instruction="""You are a code review agent. Your role is to review the provided code for security vulnerabilities, code smells, readability, and efficiency.
-        The user can provide either a direct code snippet or a GitHub pull request URL. Your goal is to provide a thorough review and suggest necessary fixes.
-        If the user provides a GitHub pull request URL, fetch the diff using get_github_pr_diff first.
-        Then, review the code using review_code.
-        Make sure to explain the issues clearly and suggest fixes where possible.
-        """,
-    tools=[review_code, get_github_pr_diff]
+    description=(
+        "Reviews supplied code snippets or GitHub PR diffs for security vulnerabilities, "
+        "code smells, readability, and best practices. "
+        "Input: a code snippet (any language, auto-detected) OR a GitHub PR URL "
+        "(https://github.com/owner/repo/pull/N). "
+        "Output: structured Review with issues, fixes, and overall comments. "
+        "Does NOT answer general programming questions, provide tutorials, "
+        "draft emails, or create Jira tickets."
+    ),
+    instruction=(
+        "You are a code review agent. Your role is to review the provided code for "
+        "security vulnerabilities, code smells, readability, and efficiency.\n"
+        "You receive either a direct code snippet or a GitHub pull request URL.\n"
+        "If you receive a GitHub PR URL, fetch the diff using get_github_pr_diff first.\n"
+        "Then, review the code using review_code.\n"
+        "Explain the issues clearly and suggest fixes where possible."
+        + build_scope_guard("code review of supplied code snippets or GitHub PR diffs")
+    ),
+    tools=[review_code, get_github_pr_diff],
+    output_schema=Review,
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
 )

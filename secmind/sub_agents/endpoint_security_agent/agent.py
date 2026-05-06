@@ -27,6 +27,7 @@ from .instruction_builder import (
     build_agent_name,
     build_short_description,
 )
+from secmind.sub_agents._scope_guard import build_scope_guard
 from .report_generator import generate_html_report
 
 logger = logging.getLogger(__name__)
@@ -724,8 +725,8 @@ def generate_endpoint_report() -> dict:
         html = generate_html_report(data, integration_label=integration_label)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"endpoint_security_report-{_filename_token(integration_label)}-{ts}.html"
-        reports_dir = os.path.abspath(os.environ.get("REPORTS_DIR", "reports"))
-        os.makedirs(reports_dir, exist_ok=True)
+        from secmind.reports import user_reports_dir
+        reports_dir = user_reports_dir()
         path = os.path.join(reports_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
@@ -795,8 +796,12 @@ endpoint_security_agent = Agent(
     name=build_agent_name(),
     model="gemini-2.5-pro",
     description=build_short_description(),
-    instruction=build_agent_instructions(),
+    instruction=build_agent_instructions() + build_scope_guard(
+        "endpoint security queries via CrowdStrike Falcon and Qualys integrations"
+    ),
     tools=AGENT_TOOLS,
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
 )
 
 

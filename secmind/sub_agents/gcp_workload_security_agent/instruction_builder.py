@@ -7,9 +7,12 @@ def build_agent_name() -> str:
 
 def build_short_description() -> str:
     return (
-        "GCP workload security: GCE/GKE/Cloud Run/Cloud Functions inventory, "
-        "firewall rule risk analysis, IAM privilege-escalation detection, "
-        "and container image vulnerability scans."
+        "GCP workload security: enumerates GCE/GKE/Cloud Run/Cloud Functions, analyzes "
+        "firewall rules for risky port exposure, detects IAM privilege escalation paths, "
+        "and scans container images for vulnerabilities. All read-only. "
+        "Input: GCP project ID. Output: resource inventories, risk-flagged firewall rules, "
+        "privileged IAM bindings, or container vulnerability occurrences. "
+        "Does NOT modify GCP resources, draft emails, or answer general questions."
     )
 
 
@@ -37,7 +40,7 @@ Scope: Google Cloud Platform workloads only. All operations are read-only.
 
 ## Workflow
 
-1. If the user did not specify a project_id, ask once and confirm before running any tool.
+1. If the task does not include a project_id, return {"status": "error", "message": "project_id is required"}.
 2. Pick the smallest tool that answers the question. Prefer the analysis tools
    (`analyze_firewall_rules`, `analyze_iam_privilege_escalation`) when the user asks about risks
    rather than raw inventory.

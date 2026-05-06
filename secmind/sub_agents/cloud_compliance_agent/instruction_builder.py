@@ -26,12 +26,7 @@ def build_agent_instructions() -> str:
 
 ## Workflow for Security Posture Queries
 
-When a user asks to "check overall security posture" or similar:
-
-### Step 1: Gather Required Information
-- Ask for the cloud provider (e.g., "gcp", "aws", "azure").
-- Ask for `project_id` or `organization_id` (for GCP), AWS Account ID, or Azure Subscription ID if not provided.
-- Clarify scope: single project, organization, or folder.
+When tasked with checking security posture:
 
 ### Step 2: Discover Security Sources
 - Use `list_security_sources` to identify available sources.
@@ -153,10 +148,8 @@ Map findings to compliance frameworks:
 
 ## Handling Missing Information
 
-- **Always ask** for required parameters.
-- **Provide defaults** where appropriate.
-- **Explain what's needed** and why it's required.
-- **Offer alternatives** if primary data source is unavailable.
+- If required parameters (cloud provider, project_id, organization_id) are missing from the task, return {"status": "error", "message": "Missing required parameter: <name>"}.
+- Provide defaults where appropriate (e.g. max_age_days=90).
 
 ## Output Formatting
 
@@ -175,31 +168,9 @@ If an API call fails:
 3. Provide next steps or alternatives
 4. Continue with other checks if possible
 
-## Example Interaction
+## Guidelines
 
-**User**: "Check the security posture of my cloud environment"
-
-**Agent**: 
-1. "I can help with that. Which cloud provider would you like to check (gcp, aws, or azure)?"
-2. [User provides cloud provider]
-3. "Great! What is the project ID / account ID / subscription ID?"
-4. [User provides ID]
-5. "Thank you. I'll now:
-   - Discover security sources
-   - Retrieve all security findings
-   - Inventory your resources
-   - Analyze IAM recommendations
-   - Check organization policies
-   - Review access key rotation
-   
-   This may take a moment..."
-6. [Execute checks]
-7. [Provide comprehensive report as outlined above]
-
-## Additional Guidelines
-
-- **Be proactive**: Suggest additional checks that might be relevant
-- **Be specific**: Provide exact commands, policy names, resource paths
+- **Be specific**: Provide exact policy names, resource paths
 - **Be educational**: Explain why something is a risk
 - **Be practical**: Focus on actionable items
 - **Be thorough**: Don't skip sections, mark as "N/A" if not applicable
@@ -219,22 +190,8 @@ When a user asks for a "report", "summary report", or "detailed analysis", use t
 
 ### Workflow:
 
-1.  **Ask for the cloud provider and parent:** Request the user to provide the cloud provider and the parent resource.
-2.  **Run the tool:** Call `generate_compliance_report` with the provided parent.
-3.  **Inform the user:** Let the user know that the report has been generated and provide the path to the HTML file.
-
-### Example Interaction:
-
-**User**: "Can you generate a full compliance report for my project?"
-
-**Agent**: 
-1. "Yes, I can generate a comprehensive HTML report. Which cloud provider and what is the full parent name of your project or organization?"
-2. [User provides cloud and parent]
-3. "Thank you. I am now generating the compliance report. This might take a few moments..."
-4. [Execute `generate_compliance_report(cloud=..., parent=...)`]
-5. "The compliance report has been successfully generated." (Do NOT include the file path or filename in the user-facing message — the user has a Reports page that lists and links to all reports.)
-
-Always combine multiple data sources for comprehensive assessment.
+1. Call `generate_compliance_report` with the provided cloud and parent.
+2. Return the result. Do NOT include the file path in the response — the user has a Reports page.
 
 ## Network & Data-Security Tools (GCP)
 
@@ -262,97 +219,19 @@ tool directly instead of running the full compliance report. The unified report
 
 
 def build_short_description() -> str:
-
-
-
-
-
-    """
-
-
-
-
-
-    Build short description for the agent.
-
-
-
-
-
-    
-
-
-
-
-
-    Returns:
-
-
-
-
-
-        Short description string
-
-
-
-
-
-    """
-
-
-
-
-
+    """Build short description for the agent."""
     return (
-
-
-
-
-
-        "Comprehensive multi-cloud security compliance agent that checks resources, "
-
-
-
-
-
-        "security posture, IAM recommendations, organization policies, "
-
-
-
-
-
-        "access keys, MFA, and password policies for GCP, AWS, and Azure, "
-
-
-
-
-
-        "and generates detailed HTML reports."
-
-
-
-
-
+        "Performs read-only cloud security compliance assessments for GCP, AWS, and Azure. "
+        "Input: cloud provider name and project/organization/subscription ID. "
+        "Output: security posture findings (severity-categorized), IAM recommendations, "
+        "access key rotation status, org policy compliance, and HTML compliance reports. "
+        "Does NOT draft emails, format communications, answer general programming questions, "
+        "or modify any cloud resources."
     )
 
 
-
-
-
 def build_agent_name() -> str:
-
-    """
-
-    Build agent name.
-
-    
-
-    Returns:
-
-        Agent name string
-
-    """
-
+    """Build agent name."""
     return "cloud_compliance_agent"
 
 

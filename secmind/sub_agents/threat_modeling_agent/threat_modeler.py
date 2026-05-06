@@ -11,9 +11,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from google import genai
-from google.genai import types as genai_types
-
+from secmind.llm import generate_json
 from secmind.memory import MemoryProxy
 from secmind.memory_manager import MemoryManager
 
@@ -129,7 +127,6 @@ class ThreatModeler:
         # call, so this singleton-built ThreatModeler doesn't pin one user's
         # memory store.
         self.memory = memory_manager or MemoryProxy()
-        self.client = genai.Client()
         logger.info("Initialized ThreatModeler with model: %s", self.model_name)
 
     def generate_threat_model(
@@ -168,10 +165,19 @@ class ThreatModeler:
             dfd = None
 
         per_framework: List[FrameworkResult] = []
-        for fw in frameworks:
-            result = self._run_framework(fw, app_details)
-            if result is not None:
-                per_framework.append(result)
+        if len(frameworks) > 1:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=len(frameworks)) as pool:
+                futures = {pool.submit(self._run_framework, fw, app_details): fw for fw in frameworks}
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result is not None:
+                        per_framework.append(result)
+        else:
+            for fw in frameworks:
+                result = self._run_framework(fw, app_details)
+                if result is not None:
+                    per_framework.append(result)
 
         if not per_framework:
             return {
@@ -202,19 +208,18 @@ class ThreatModeler:
             logger.error("Framework %s: unexpected error: %s", framework.name, e, exc_info=True)
             return None
 
+    def _current_model(self):
+        """Read the model from the ADK agent (respects per-request Settings override)."""
+        from .agent import threat_modeling_agent
+        return getattr(threat_modeling_agent, "model", self.model_name)
+
     def _generate_with_retry(self, prompt: str, retries: int = MAX_RETRIES) -> Optional[str]:
-        config = genai_types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=GENERATION_TEMPERATURE,
-        )
+        model = self._current_model()
         for attempt in range(retries):
             try:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config=config,
+                text = generate_json(
+                    prompt, model, temperature=GENERATION_TEMPERATURE,
                 )
-                text = (response.text or "").strip()
                 if text:
                     return text
                 logger.warning("Attempt %d returned empty text", attempt + 1)
@@ -304,8 +309,8 @@ def generate_threat_model_report(app_details: str, frameworks: str = "auto") -> 
             return f"Failed to generate threat model: {result['message']}"
 
         html_report = report_generator.generate_html_report(result["report"])
-        reports_dir = os.path.abspath(os.environ.get("REPORTS_DIR", "reports"))
-        os.makedirs(reports_dir, exist_ok=True)
+        from secmind.reports import user_reports_dir
+        reports_dir = user_reports_dir()
         report_path = os.path.join(reports_dir, _build_report_filename(app_details_dict))
         with open(report_path, "w") as f:
             f.write(html_report)
