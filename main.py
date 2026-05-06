@@ -8,14 +8,17 @@ from datetime import datetime, timezone
 
 from flask import Flask, abort, g, jsonify, redirect, request, send_from_directory
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 
 from google.adk.models.lite_llm import LiteLlm
 
 from secmind.agent import AgentConfig, secmind
 from secmind.auth import require_auth
+from secmind.auth.jwt_session import COOKIE_NAME as SESSION_COOKIE_NAME, revoke as revoke_token
 from secmind.auth.middleware import (
     clear_session_cookie,
     set_session_cookie,
@@ -30,7 +33,9 @@ from secmind.auth.user_store import get_user_store
 from secmind.env_shim import apply_integrations_for_request
 from secmind.integration_store import get_store
 from secmind.integration_tests import test_connection
+from secmind.llm_credentials import lookup_api_key_for_model
 from secmind.settings_store import get_settings_store
+from secmind.reports import user_reports_dir
 from secmind.user_context import user_scope
 
 logger = logging.getLogger(__name__)
@@ -49,42 +54,58 @@ app = Flask(__name__)
 # The default regex covers ``vite --host`` on the LAN (any IP/hostname on
 # :5173) so signup/login work whether you hit localhost, 127.0.0.1, or your
 # machine's LAN IP.
+_is_dev = os.environ.get("SECMIND_ENV", "development") == "development"
+_cors_default = "http://localhost:5173,http://127.0.0.1:5173" if _is_dev else ""
 _origins: list = [
     o.strip()
-    for o in os.environ.get(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
+    for o in os.environ.get("CORS_ORIGINS", _cors_default).split(",")
     if o.strip()
 ]
-_origin_regex = os.environ.get("CORS_ORIGIN_REGEX", r"^http://[\w.-]+:5173$")
+_origin_regex = os.environ.get(
+    "CORS_ORIGIN_REGEX",
+    r"^http://[\w.-]+:5173$" if _is_dev else "",
+)
 if _origin_regex:
     _origins.append(re.compile(_origin_regex))
 CORS(app, supports_credentials=True, origins=_origins)
 
-_session_service = InMemorySessionService()
+limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
+
+_session_service = DatabaseSessionService(db_url="sqlite+aiosqlite:///memory/sessions.db")
 _runner = Runner(app_name=APP_NAME, agent=secmind, session_service=_session_service)
 
 
 def _all_agents() -> list:
-    return [secmind, *list(secmind.sub_agents)]
+    from google.adk.tools.agent_tool import AgentTool
+    workers = [t.agent for t in (secmind.tools or []) if isinstance(t, AgentTool)]
+    return [secmind, *workers]
 
 
-def _resolve_model(model_id: str):
+def _resolve_model(model_id: str, user_id: int | None = None):
     """Return an ADK-compatible model handle for a model id string.
 
     - Gemini ids stay as plain strings (ADK native).
-    - Claude/OpenAI ids are wrapped with LiteLlm so any ADK agent can use them
-      via litellm. Requires ANTHROPIC_API_KEY / OPENAI_API_KEY in env (the env
-      shim from B3 projects them from configured integrations).
+    - Claude/OpenAI ids are wrapped with LiteLlm. When ``user_id`` is given,
+      the api_key is pulled from that user's active integration and passed
+      directly to ``LiteLlm`` so the LLM path doesn't depend on the process-
+      global env shim — that's the per-user-credentials race fix.
+    - Without ``user_id`` we fall back to whatever LiteLlm finds in env, which
+      is fine for single-tenant uses (CLI / ``adk web``).
     """
     if model_id.startswith("gemini"):
         return model_id
     if model_id.startswith("claude"):
-        return LiteLlm(model=f"anthropic/{model_id}")
-    if model_id.startswith("gpt-") or model_id.startswith("o"):
-        return LiteLlm(model=f"openai/{model_id}")
-    return LiteLlm(model=model_id)
+        prefixed = f"anthropic/{model_id}"
+    elif model_id.startswith("gpt-") or model_id.startswith("o"):
+        prefixed = f"openai/{model_id}"
+    else:
+        prefixed = model_id
+    kwargs: dict = {}
+    if user_id is not None:
+        api_key = lookup_api_key_for_model(model_id, user_id)
+        if api_key:
+            kwargs["api_key"] = api_key
+    return LiteLlm(model=prefixed, **kwargs)
 
 
 def _model_id(handle) -> str:
@@ -114,7 +135,7 @@ def _apply_user_model_settings(user_id: int):
                 chosen = selections.get(agent.name)
                 if chosen and _model_id(getattr(agent, "model", None)) != chosen:
                     backup.append((agent, agent.model))
-                    agent.model = _resolve_model(chosen)
+                    agent.model = _resolve_model(chosen, user_id=user_id)
                     logger.info(
                         "Set %s model -> %s (user_id=%s)",
                         agent.name, chosen, user_id,
@@ -158,7 +179,31 @@ async def _run_agent(user_message: str, user_id: str, session_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _maybe_claim_orphans_for_first_admin(user) -> None:
+    """Reassign pre-multitenant data (orphan integrations parked at user_id=0
+    by the AU5 migration) to the first admin to sign up.
+
+    No-op when the new user isn't the first admin, so it's safe to call from
+    every signup path. Best-effort: failures are logged, never raised, since
+    a fresh deployment has nothing to claim and shouldn't fail signup over
+    a missing orphan-claim.
+    """
+    if user.role != "admin" or get_user_store().count() != 1:
+        return
+    try:
+        n = get_store().claim_orphans(user.id)
+    except Exception:
+        logger.exception("Failed to claim orphan integrations for user_id=%s", user.id)
+        return
+    if n:
+        logger.info(
+            "First admin user_id=%s claimed %d orphan integration(s)",
+            user.id, n,
+        )
+
+
 @app.route("/auth/signup", methods=["POST"])
+@limiter.limit("5/minute")
 def auth_signup():
     data = request.get_json() or {}
     try:
@@ -169,11 +214,13 @@ def auth_signup():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    _maybe_claim_orphans_for_first_admin(user)
     resp = jsonify({"user": user.to_dict()})
     return set_session_cookie(resp, user)
 
 
 @app.route("/auth/login", methods=["POST"])
+@limiter.limit("10/minute")
 def auth_login():
     data = request.get_json() or {}
     user = get_user_store().verify_password(
@@ -187,6 +234,7 @@ def auth_login():
 
 @app.route("/auth/logout", methods=["POST"])
 def auth_logout():
+    revoke_token(request.cookies.get(SESSION_COOKIE_NAME, ""))
     return clear_session_cookie(jsonify({"ok": True}))
 
 
@@ -203,7 +251,8 @@ def auth_google_start():
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 500
     resp = redirect(url, code=302)
-    secure = os.environ.get("SECMIND_COOKIE_SECURE", "0") == "1"
+    _cookie_default = "0" if os.environ.get("SECMIND_ENV", "development") == "development" else "1"
+    secure = os.environ.get("SECMIND_COOKIE_SECURE", _cookie_default) == "1"
     resp.set_cookie(
         STATE_COOKIE,
         state,
@@ -236,6 +285,8 @@ def auth_google_callback():
     except Exception as exc:
         logger.exception("Google OAuth callback failed")
         return jsonify({"error": str(exc)}), 400
+
+    _maybe_claim_orphans_for_first_admin(user)
 
     # Redirect into the SPA root; the SPA bootstraps via /auth/me.
     spa_origin = (_origins[0] if _origins else "/").rstrip("/")
@@ -393,7 +444,6 @@ def test_integration(integration_id: int):
     return jsonify(result), status_code
 
 
-REPORTS_DIR = os.path.abspath("reports")
 REPORT_EXTENSIONS = (".html", ".pdf", ".json", ".md")
 
 
@@ -449,14 +499,16 @@ def _report_title(name: str, kind: str) -> str:
 @app.route("/reports", methods=["GET"])
 @require_auth
 def list_reports():
-    if not os.path.isdir(REPORTS_DIR):
+    with user_scope(g.user.id):
+        reports_dir = user_reports_dir()
+    if not os.path.isdir(reports_dir):
         return jsonify([])
 
     items = []
-    for name in os.listdir(REPORTS_DIR):
+    for name in os.listdir(reports_dir):
         if name.startswith("."):
             continue
-        path = os.path.join(REPORTS_DIR, name)
+        path = os.path.join(reports_dir, name)
         if not os.path.isfile(path):
             continue
         if not name.lower().endswith(REPORT_EXTENSIONS):
@@ -486,10 +538,12 @@ def list_reports():
 def get_report(name: str):
     if not _safe_filename(name):
         abort(404)
-    if not os.path.isfile(os.path.join(REPORTS_DIR, name)):
+    with user_scope(g.user.id):
+        reports_dir = user_reports_dir()
+    if not os.path.isfile(os.path.join(reports_dir, name)):
         abort(404)
     download = request.args.get("download") == "1"
-    return send_from_directory(REPORTS_DIR, name, as_attachment=download)
+    return send_from_directory(reports_dir, name, as_attachment=download)
 
 
 if __name__ == "__main__":

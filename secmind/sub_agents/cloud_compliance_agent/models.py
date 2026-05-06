@@ -477,3 +477,27 @@ class APIResponse:
     def error(cls, message: str, error_details: Optional[dict[str, Any]] = None) -> "APIResponse":
         """Create an error response."""
         return cls(status="error", message=message, error_details=error_details)
+
+
+# ============================================================================
+# STRUCTURED OUTPUT MODELS (Pydantic — used by AgentTool output_schema)
+# ============================================================================
+
+from pydantic import BaseModel as PydanticBaseModel
+
+
+class ComplianceFinding(PydanticBaseModel):
+    category: str
+    severity: str
+    description: str
+    resource_name: Optional[str] = None
+    recommendation: Optional[str] = None
+
+
+class ComplianceAssessment(PydanticBaseModel):
+    summary: str
+    findings: list[ComplianceFinding]
+    report_path: Optional[str] = None
+    risk_score: Optional[int] = None
+    compliant_count: Optional[int] = None
+    non_compliant_count: Optional[int] = None

@@ -38,8 +38,13 @@ pytz
 requests
 Flask
 Flask-Cors
+Flask-Limiter
+greenlet
 google-cloud-storage
 networkx
 matplotlib
 pydot
 scipy
+behave
+pytest
+pytest-cov

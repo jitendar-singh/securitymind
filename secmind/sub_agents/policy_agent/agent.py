@@ -170,18 +170,27 @@ Legacy (only if no source integrations exist):
 """
 
 
+from secmind.sub_agents._scope_guard import build_scope_guard
+
 policy_agent = Agent(
     name="policy_agent",
     model="gemini-2.5-pro",
     description=(
         "Answers policy and governance questions from configured knowledge sources "
-        "(Confluence, Notion, local docs) and summarizes policy documents on demand."
+        "(Confluence, Notion, local docs) and summarizes policy documents on demand. "
+        "Input: a policy question or request to summarize a specific document. "
+        "Output: answer with source citations or a structured summary. "
+        "Does NOT draft emails, review code, or answer general programming questions."
     ),
-    instruction=_INSTRUCTION,
+    instruction=_INSTRUCTION + build_scope_guard(
+        "policy and governance questions from configured knowledge sources"
+    ),
     tools=[
         search_policy_documents,
         fetch_policy_document,
         list_policy_documents,
         read_policy_file,
     ],
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
 )

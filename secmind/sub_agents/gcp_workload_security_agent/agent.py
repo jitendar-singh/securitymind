@@ -16,6 +16,7 @@ from .instruction_builder import (
     build_agent_name,
     build_short_description,
 )
+from secmind.sub_agents._scope_guard import build_scope_guard
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +97,13 @@ gcp_workload_security_agent = Agent(
     name=build_agent_name(),
     model="gemini-2.5-pro",
     description=build_short_description(),
-    instruction=build_agent_instructions(),
+    instruction=build_agent_instructions() + build_scope_guard(
+        "GCP workload security analysis (GCE/GKE/Cloud Run/Cloud Functions, "
+        "firewall analysis, IAM privilege escalation, container scans)"
+    ),
     tools=AGENT_TOOLS,
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
 )
 
 

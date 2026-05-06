@@ -7,8 +7,13 @@ def build_agent_name() -> str:
 
 def build_short_description() -> str:
     return (
-        "CrowdStrike Falcon (EDR) and Qualys (vulnerability management): "
-        "list/inspect hosts, detections, incidents, and host vulnerability findings."
+        "Queries CrowdStrike Falcon (EDR/XDR) and Qualys (VM) for endpoint security data: "
+        "hosts, detections, incidents, Spotlight vulnerabilities, IOCs, IOMs, audit events, "
+        "and cross-vendor host correlation. All read-only. "
+        "Input: filter queries (FQL for CrowdStrike, IPs/severities for Qualys), or a "
+        "hostname/IP for correlation. Output: lists of hosts/detections/incidents/vulns, "
+        "correlation cards, or an HTML posture report. "
+        "Does NOT contain/quarantine/delete endpoints, draft emails, or answer general questions."
     )
 
 

@@ -52,9 +52,6 @@ class DFDArtifacts(TypedDict, total=False):
 class DFDGenerator:
     """Builds a DFD model from `app_details` and renders Mermaid + (optionally) PNG."""
 
-    REPORTS_DIR_ENV = "REPORTS_DIR"
-    DEFAULT_REPORTS_DIR = "reports"
-
     def __init__(self, app_details: Dict[str, Any]):
         if not isinstance(app_details, dict):
             raise DFDValidationError("app_details must be a dict")
@@ -130,8 +127,11 @@ class DFDGenerator:
         )
 
     def _add_boundary(self, b: Any) -> None:
-        if not isinstance(b, dict) or "name" not in b or "components" not in b:
-            raise DFDValidationError(f"trust_boundary needs 'name' and 'components': {b!r}")
+        if not isinstance(b, dict) or "name" not in b:
+            raise DFDValidationError(f"trust_boundary needs at least 'name': {b!r}")
+        if "components" not in b:
+            logger.warning("Trust boundary %r has no 'components' key; skipping", b.get("name"))
+            return
         members = [cid for cid in b["components"] if cid in self.graph.nodes]
         if not members:
             logger.warning("Trust boundary %r has no resolvable members; skipping", b["name"])
@@ -289,8 +289,8 @@ class DFDGenerator:
         return "\n".join(lines)
 
     def _output_path(self) -> str:
-        reports_dir = os.path.abspath(os.environ.get(self.REPORTS_DIR_ENV, self.DEFAULT_REPORTS_DIR))
-        os.makedirs(reports_dir, exist_ok=True)
+        from secmind.reports import user_reports_dir
+        reports_dir = user_reports_dir()
         digest = hashlib.sha256(
             json.dumps(self.app_details, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()[:8]

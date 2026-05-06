@@ -14,12 +14,13 @@ import os
 from google.adk.agents import Agent
 
 
-from .models import APIResponse
+from .models import APIResponse, ComplianceAssessment
 from .instruction_builder import (
     build_agent_instructions,
     build_short_description,
     build_agent_name,
 )
+from secmind.sub_agents._scope_guard import build_scope_guard
 from .report_generator import generate_html_report
 from .clients.base import BaseClient
 from .clients.azure import AzureClient
@@ -608,8 +609,8 @@ def generate_compliance_report(cloud: str, parent: str) -> dict:
         html_content = generate_html_report(all_data, parent, cloud)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         report_filename = f"compliance_report_{parent.replace('/', '_')}-{ts}.html"
-        reports_dir = os.path.abspath(os.environ.get("REPORTS_DIR", "reports"))
-        os.makedirs(reports_dir, exist_ok=True)
+        from secmind.reports import user_reports_dir
+        reports_dir = user_reports_dir()
         report_path = os.path.join(reports_dir, report_filename)
         
         with open(report_path, "w") as f:
@@ -656,8 +657,13 @@ cloud_compliance_agent = Agent(
     name=build_agent_name(),
     model="gemini-2.5-pro",
     description=build_short_description(),
-    instruction=build_agent_instructions(),
+    instruction=build_agent_instructions() + build_scope_guard(
+        "cloud security compliance assessments for GCP, AWS, and Azure"
+    ),
     tools=AGENT_TOOLS,
+    output_schema=ComplianceAssessment,
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
 )
 
 

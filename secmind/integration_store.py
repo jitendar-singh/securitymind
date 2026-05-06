@@ -41,6 +41,13 @@ def _load_or_create_key(db_dir: Path) -> bytes:
     if key_path.exists():
         return key_path.read_bytes().strip()
 
+    if os.getenv("SECMIND_ENV", "development") != "development":
+        raise RuntimeError(
+            f"{FERNET_ENV_VAR} is not set. "
+            f"In production, set this env var to a Fernet key "
+            f"(generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')."
+        )
+
     logger.warning(
         "%s not set and %s missing — generating a new Fernet key. "
         "Set %s in production to avoid losing access to stored credentials.",
@@ -267,6 +274,44 @@ class IntegrationStore:
         )
         self._conn.commit()
         return cursor.rowcount > 0
+
+    def claim_orphans(self, user_id: int) -> int:
+        """Reassign rows with ``user_id = ORPHAN_USER_ID`` to ``user_id``.
+
+        Used at first-admin signup so legacy single-tenant integrations
+        (which the per-user-scoping migration parked at user_id=0) become
+        accessible to that user. Skips rows that would collide with an
+        existing ``(user_id, provider, name)`` and returns the number
+        successfully reassigned.
+        """
+        if not isinstance(user_id, int) or user_id <= 0:
+            raise ValueError("user_id must be a positive integer")
+        rows = self._conn.execute(
+            "SELECT id, provider, name FROM integrations WHERE user_id = ?",
+            (ORPHAN_USER_ID,),
+        ).fetchall()
+        claimed = 0
+        skipped = 0
+        for row in rows:
+            collision = self._conn.execute(
+                "SELECT 1 FROM integrations WHERE user_id = ? AND provider = ? AND name = ?",
+                (user_id, row["provider"], row["name"]),
+            ).fetchone()
+            if collision:
+                skipped += 1
+                continue
+            self._conn.execute(
+                "UPDATE integrations SET user_id = ? WHERE id = ?",
+                (user_id, row["id"]),
+            )
+            claimed += 1
+        self._conn.commit()
+        if claimed or skipped:
+            logger.info(
+                "claim_orphans: claimed=%d, skipped=%d (target user_id=%s)",
+                claimed, skipped, user_id,
+            )
+        return claimed
 
     def iter_active(self, user_id: int) -> Iterator[dict]:
         rows = self._conn.execute(
