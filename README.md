@@ -8,7 +8,6 @@
 
 Security Mind is a multi-agent AI platform for application security posture management. Built on the [Google ADK](https://google.github.io/adk-docs/) (Agent Development Kit), it uses an orchestrator pattern where a master agent delegates natural-language requests to 8 specialized sub-agents. A React SPA provides the user interface for chat, integration management, reports, and per-agent model selection. The system supports Gemini, Claude, and GPT models, offers secure multi-tenancy with JWT authentication and Fernet-encrypted credentials, and operates with **read-only permissions** against cloud environments.
 
-![secmind-workflow](https://github.com/user-attachments/assets/40c17280-4b1d-4425-8778-ea9f5769c292)
 
 ## Table of Contents
 
